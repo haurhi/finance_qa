@@ -162,7 +162,8 @@ func (e *Engine) bankStatementHasAmountRows(from, to string) bool {
 	sqlTxt := fmt.Sprintf(`SELECT COUNT(*)
 FROM bank_statement
 WHERE %s
-  AND transaction_date BETWEEN ? AND ?
+  AND DATE(transaction_date) >= DATE(?)
+  AND DATE(transaction_date) <= DATE(?)
   AND (%s)`, companyClause, amountPredicate)
 	args := append(companyArgs, from+"-01", monthEndDay(to))
 	var count int
@@ -185,10 +186,11 @@ func (e *Engine) latestBankStatementPeriodWithAmountRows() string {
 		return ""
 	}
 	companyClause, companyArgs := e.scopedCompanyClause("company")
-	sqlTxt := fmt.Sprintf(`SELECT MAX(SUBSTR(CAST(transaction_date AS TEXT), 1, 7))
+	sqlTxt := fmt.Sprintf(`SELECT MAX(SUBSTR(CAST(DATE(transaction_date) AS TEXT), 1, 7))
 FROM bank_statement
 WHERE %s
-  AND COALESCE(TRIM(transaction_date), '') <> ''
+  AND COALESCE(TRIM(CAST(transaction_date AS TEXT)), '') <> ''
+  AND DATE(transaction_date) IS NOT NULL
   AND (%s)`, companyClause, amountPredicate)
 	var period string
 	if err := e.db.QueryRow(sqlTxt, companyArgs...).Scan(&period); err != nil {

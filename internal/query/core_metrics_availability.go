@@ -21,7 +21,7 @@ func (e *Engine) latestAvailableFinancialPeriod() string {
 		`SELECT MAX(period) FROM balance_detail WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')`,
 		`SELECT MAX(period) FROM journal WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')`,
 		`SELECT MAX(SUBSTR(CAST(voucher_date AS TEXT), 1, 7)) FROM journal WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')`,
-		`SELECT MAX(SUBSTR(CAST(transaction_date AS TEXT), 1, 7)) FROM bank_statement WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')`,
+		`SELECT MAX(SUBSTR(CAST(DATE(transaction_date) AS TEXT), 1, 7)) FROM bank_statement WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%') AND DATE(transaction_date) IS NOT NULL`,
 	}
 	best := ""
 	for _, sqlTxt := range queries {
