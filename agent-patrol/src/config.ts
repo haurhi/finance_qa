@@ -37,11 +37,19 @@ function resolvedOptionalString(value: unknown): string | undefined {
   return trimmed;
 }
 
-function readCaseVariablesFile(configPath: string, filePath: string): Record<string, Record<string, string[]>> {
-  const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(path.dirname(configPath), filePath);
+function readCaseVariablesFile(configPath: string, filePath: string): Record<string, Record<string, string[]>> | undefined {
+  const absolutePath = resolveCaseVariablesPath(configPath, filePath);
+  if (!fs.existsSync(absolutePath)) return undefined;
   const parsed = JSON.parse(fs.readFileSync(absolutePath, "utf8")) as unknown;
   const record = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
   return normalizeCaseVariables(record.templates ?? record) ?? {};
+}
+
+function resolveCaseVariablesPath(configPath: string, filePath: string): string {
+  if (path.isAbsolute(filePath)) return filePath;
+  const cwdRelative = path.resolve(filePath);
+  if (fs.existsSync(cwdRelative)) return cwdRelative;
+  return path.resolve(path.dirname(configPath), filePath);
 }
 
 function normalizeCaseVariables(value: unknown): Record<string, Record<string, string[]>> | undefined {

@@ -105,11 +105,63 @@ targets:
   assert.deepEqual(config.caseVariables?.finance_customer_receivable_unpaid?.customer_name, ["客户A", "客户B"]);
 });
 
+test("loadConfig resolves relative case variables file from process cwd before config directory", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-config-vars-"));
+  const configDir = path.join(dir, "presets");
+  const variablesDir = path.join(dir, "tmp/reference-snapshots");
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.mkdirSync(variablesDir, { recursive: true });
+  const variablesPath = path.join(variablesDir, "case-variables.json");
+  const configPath = path.join(configDir, "patrol.yaml");
+  fs.writeFileSync(variablesPath, JSON.stringify({
+    templates: {
+      finance_supplier_payable_unpaid: {
+        supplier_name: ["供应商A"]
+      }
+    }
+  }), "utf8");
+  fs.writeFileSync(configPath, `
+caseVariablesFile: "${path.relative(process.cwd(), variablesPath)}"
+targets:
+  finance:
+    runner:
+      type: openclaw_agent_cli
+    oracle:
+      type: financeqa_readonly
+      mcpUrl: http://127.0.0.1/mcp
+      allowedTools: [finance-query]
+`, "utf8");
+
+  const config = loadConfig(configPath, {});
+
+  assert.deepEqual(config.caseVariables?.finance_supplier_payable_unpaid?.supplier_name, ["供应商A"]);
+});
+
 test("loadConfig ignores unresolved optional case variables file placeholders", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-config-vars-"));
   const configPath = path.join(dir, "patrol.yaml");
   fs.writeFileSync(configPath, `
 caseVariablesFile: "\${CASE_VARIABLES_FILE}"
+targets:
+  finance:
+    runner:
+      type: openclaw_agent_cli
+    oracle:
+      type: financeqa_readonly
+      mcpUrl: http://127.0.0.1/mcp
+      allowedTools: [finance-query]
+`, "utf8");
+
+  const config = loadConfig(configPath, {});
+
+  assert.equal(config.caseVariables, undefined);
+});
+
+test("loadConfig treats a missing optional case variables file as empty", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-config-vars-"));
+  const configPath = path.join(dir, "patrol.yaml");
+  fs.writeFileSync(configPath, `
+caseVariablesFile: "tmp/reference-snapshots/missing-case-variables.json"
 targets:
   finance:
     runner:
