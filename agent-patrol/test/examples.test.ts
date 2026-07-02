@@ -190,6 +190,18 @@ test("financeqa preset defines reference-check labels for finance answer compari
   }
 });
 
+test("financeqa preset keeps supplemental payable totals out of hard amount checks", () => {
+  const config = loadConfig("presets/financeqa.yaml", {
+    OPENCLAW_AGENT_CMD: "node examples/runners/openclaw_ssh_runner.mjs --host clawdbot --question-file {questionFile} --session-id {sessionId}",
+    FINANCEQA_MCP_URL: "http://127.0.0.1/stub"
+  });
+
+  for (const name of ["finance_project_payable_unpaid", "finance_unpaid_projects"]) {
+    const labels = ((config.templates?.[name]?.scoring?.referenceChecks as any)?.amounts?.labels ?? []) as string[];
+    assert.deepEqual(labels.includes("项目成本"), false, `${name} should not require supplemental project cost as a primary amount`);
+  }
+});
+
 test("financeqa preset keeps business anchors in configuration", () => {
   const config = loadConfig("presets/financeqa.yaml", {
     OPENCLAW_AGENT_CMD: "node examples/runners/openclaw_ssh_runner.mjs --host clawdbot --question-file {questionFile} --session-id {sessionId}",
@@ -820,7 +832,9 @@ test("financeqa snapshot reference provider computes accounting and cashflow cov
       ],
       fin_balance_detail: [
         { company: "DefaultCompany", year: 2026, period: "2026-06", account_code: "1122", account_name: "应收账款", closing_debit: 1200, closing_credit: 100 },
+        { company: "DefaultCompany", year: 2026, period: "2026-06", account_code: "112201", account_name: "应收账款-客户A", closing_debit: 1200, closing_credit: 100 },
         { company: "DefaultCompany", year: 2026, period: "2026-06", account_code: "2202", account_name: "应付账款", closing_debit: 50, closing_credit: 950 },
+        { company: "DefaultCompany", year: 2026, period: "2026-06", account_code: "220201", account_name: "应付账款-供应商A", closing_debit: 50, closing_credit: 950 },
         { company: "DefaultCompany", year: 2026, period: "2026-06", account_code: "2241", account_name: "其他应付款", closing_debit: 20, closing_credit: 320 }
       ],
       fin_journal: [

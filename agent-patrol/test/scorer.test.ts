@@ -397,6 +397,39 @@ test("scoreCase accepts primary metric followed by a nearby amount line", () => 
   assert.deepEqual(score.failures, []);
 });
 
+test("scoreCase accepts primary metric followed by a markdown amount line", () => {
+  const score = scoreCase({
+    id: "case-13b",
+    expected: {
+      referenceChecks: {
+        amounts: { labels: ["客户项目应收", "项目应收", "应收未收"] },
+        periods: true,
+        sources: true
+      },
+      amountLabelGroups: [["客户项目应收", "项目应收", "应收未收", "未回款"]]
+    } as any,
+    actual: {
+      source: "agent",
+      answer: [
+        "辽宁金程信息科技有限公司 2025年10月至2026年6月底的应收未收情况：",
+        "",
+        "**期间：2025-10~2026-06**",
+        "**口径：项目应收（应收未收）**",
+        "**金额：347301.31 元**",
+        "",
+        "来源：《优集收入、成本计算表 - 上传.xlsx》"
+      ].join("\n")
+    },
+    reference: {
+      source: "golden_reference",
+      answer: "2025-10~2026-06 DB金标口径先看项目汇总：客户辽宁金程信息科技有限公司：客户项目应收 347301.31 元。 来源：《优集收入、成本计算表 - 上传.xlsx》"
+    }
+  });
+
+  assert.equal(score.pass, true);
+  assert.deepEqual(score.failures, []);
+});
+
 test("scoreCase does not let an alias detail amount override a wrong primary labeled amount", () => {
   const score = scoreCase({
     id: "case-14",

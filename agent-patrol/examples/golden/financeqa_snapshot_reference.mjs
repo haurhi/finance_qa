@@ -252,12 +252,13 @@ function balanceReference(snapshot, asOf) {
       year_month: stringValue(row.period) ?? "",
       account_code: stringValue(row.account_code) ?? "",
       account_name: stringValue(row.account_name) ?? "",
+      account_level: numericValue(row.account_level),
       closing_debit: numericValue(row.closing_debit),
       closing_credit: numericValue(row.closing_credit)
     }))
     .filter((row) => row.year_month);
   const period = latestSinglePeriod(rows.map((row) => row.year_month), asOf, "balance detail");
-  const selected = rows.filter((row) => row.year_month === period.from);
+  const selected = primaryBalanceRows(rows.filter((row) => row.year_month === period.from));
   const ar = round2(sumBy(selected, (row) => isReceivableAccount(row) ? Math.max(row.closing_debit - row.closing_credit, 0) : 0));
   const ap = round2(sumBy(selected, (row) => isPayableAccount(row) ? Math.max(row.closing_credit - row.closing_debit, 0) : 0));
   const otherAp = round2(sumBy(selected, (row) => isOtherPayableAccount(row) ? Math.max(row.closing_credit - row.closing_debit, 0) : 0));
@@ -276,6 +277,15 @@ function balanceReference(snapshot, asOf) {
     },
     finalAnswer: `${period.from} DB金标口径按官方余额表/账上看：应收账款 ${formatAmount(ar)} 元，应付账款 ${formatAmount(ap)} 元，其他应付款 ${formatAmount(otherAp)} 元，账上应付端合计 ${formatAmount(payableSide)} 元。${renderSourceSuffix(source, snapshot.metadata)}`
   };
+}
+
+function primaryBalanceRows(rows) {
+  const exactCodes = new Set(["1122", "2202", "2241"]);
+  const exactNames = new Set(["应收账款", "应付账款", "其他应付款"]);
+  const exactRows = rows.filter((row) => exactCodes.has(row.account_code) || exactNames.has(row.account_name));
+  if (exactRows.length > 0) return exactRows;
+  const levelOneRows = rows.filter((row) => row.account_level === 1);
+  return levelOneRows.length > 0 ? levelOneRows : rows;
 }
 
 function bankReference(snapshot, asOf) {

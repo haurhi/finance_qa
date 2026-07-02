@@ -244,7 +244,7 @@ function labeledWindows(answer: string, label: string): string[] {
     let window = answer.slice(start, end);
     const labelWindow = answer.slice(offset, end);
     if (!containsMoneyLike(labelWindow) && boundary >= 0 && /[\n\r]/.test(afterLabel[boundary] ?? "")) {
-      const nextLine = afterLabel.slice(boundary + 1).match(/^\s*(?:金额|合计|总额)?\s*[:：]?\s*([*_`]*\s*-?[0-9][0-9,]*(?:\.\d+)?\s*(?:万元|万|元)?\s*[*_`]*)/);
+      const nextLine = afterLabel.slice(boundary + 1).match(/^\s*(?:[*_`]+\s*)?(?:金额|合计|总额)?\s*[:：]?\s*([*_`]*\s*-?[0-9][0-9,]*(?:\.\d+)?\s*(?:万元|万|元)?\s*[*_`]*)/);
       if (nextLine?.[1]) {
         window += nextLine[1];
       }

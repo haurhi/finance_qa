@@ -100,7 +100,7 @@ templates:
         - ["项目应付", "应付未付"]
       referenceChecks:
         amounts:
-          labels: ["项目应付", "应付未付", "项目成本"]
+          labels: ["项目应付", "应付未付"]
         periods: true
         sources: true
       mustContainAny:
@@ -142,10 +142,10 @@ templates:
       - ["未付款", "应付未付"]
     scoring:
       amountLabelGroups:
-        - ["项目应付", "应付未付", "未付款", "项目成本"]
+        - ["项目应付", "应付未付", "未付款"]
       referenceChecks:
         amounts:
-          labels: ["项目应付", "应付未付", "未付款", "项目成本"]
+          labels: ["项目应付", "应付未付", "未付款"]
         periods: true
         sources: true
       mustContainAny:
