@@ -20,8 +20,8 @@ func (e *Engine) latestAvailableFinancialPeriod() string {
 		`SELECT MAX(period) FROM income_statement WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')`,
 		`SELECT MAX(period) FROM balance_detail WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')`,
 		`SELECT MAX(period) FROM journal WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')`,
-		`SELECT MAX(SUBSTR(voucher_date, 1, 7)) FROM journal WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')`,
-		`SELECT MAX(SUBSTR(transaction_date, 1, 7)) FROM bank_statement WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')`,
+		`SELECT MAX(SUBSTR(CAST(voucher_date AS TEXT), 1, 7)) FROM journal WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')`,
+		`SELECT MAX(SUBSTR(CAST(transaction_date AS TEXT), 1, 7)) FROM bank_statement WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')`,
 	}
 	best := ""
 	for _, sqlTxt := range queries {
@@ -172,7 +172,7 @@ type journalPeriodEvidence struct {
 
 func (e *Engine) collectJournalMetricAvailability() map[string]string {
 	rows, err := e.db.Query(`
-SELECT SUBSTR(voucher_date, 1, 7) AS period,
+SELECT SUBSTR(CAST(voucher_date AS TEXT), 1, 7) AS period,
        account_code,
        COALESCE(summary, '')
 FROM journal

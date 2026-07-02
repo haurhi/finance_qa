@@ -185,7 +185,7 @@ func (e *Engine) latestBankStatementPeriodWithAmountRows() string {
 		return ""
 	}
 	companyClause, companyArgs := e.scopedCompanyClause("company")
-	sqlTxt := fmt.Sprintf(`SELECT MAX(SUBSTR(transaction_date, 1, 7))
+	sqlTxt := fmt.Sprintf(`SELECT MAX(SUBSTR(CAST(transaction_date AS TEXT), 1, 7))
 FROM bank_statement
 WHERE %s
   AND COALESCE(TRIM(transaction_date), '') <> ''

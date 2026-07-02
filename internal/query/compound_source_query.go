@@ -396,7 +396,7 @@ WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')
   AND (counterparty LIKE ? OR summary LIKE ?)
   AND (
     period BETWEEN ? AND ?
-    OR SUBSTR(voucher_date, 1, 7) BETWEEN ? AND ?
+    OR SUBSTR(CAST(voucher_date AS TEXT), 1, 7) BETWEEN ? AND ?
   )`
 	err := e.db.QueryRowContext(ctx, sqlText, e.Company, e.Company, like, like, periodFrom, periodTo, periodFrom, periodTo).Scan(&totals.Debit, &totals.Credit, &totals.RowCount)
 	return totals, err
