@@ -174,7 +174,6 @@ templates:
         sources: true
       mustContainAny:
         - ["客户项目应收", "项目应收", "应收未收"]
-        - ["项目口径", "客户", "指定客户"]
 
   finance_supplier_payable_unpaid:
     questions:
@@ -198,7 +197,6 @@ templates:
         sources: true
       mustContainAny:
         - ["供应商项目应付", "项目应付", "应付未付"]
-        - ["项目成本", "供应商", "指定供应商"]
 
   finance_contract_receivable_unpaid:
     questions:
@@ -222,7 +220,6 @@ templates:
         sources: true
       mustContainAny:
         - ["合同项目应收", "项目应收", "应收未收"]
-        - ["合同", "项目"]
 
   finance_single_project_payable_unpaid:
     questions:
@@ -246,7 +243,6 @@ templates:
         sources: true
       mustContainAny:
         - ["单项目应付", "项目应付", "应付未付"]
-        - ["项目成本", "项目", "项目口径"]
 
   finance_accounting_arap_balance:
     questions:

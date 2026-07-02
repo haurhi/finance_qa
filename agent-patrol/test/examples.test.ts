@@ -202,6 +202,23 @@ test("financeqa preset keeps supplemental payable totals out of hard amount chec
   }
 });
 
+test("financeqa preset does not hard-fail named entity style wording", () => {
+  const config = loadConfig("presets/financeqa.yaml", {
+    OPENCLAW_AGENT_CMD: "node examples/runners/openclaw_ssh_runner.mjs --host clawdbot --question-file {questionFile} --session-id {sessionId}",
+    FINANCEQA_MCP_URL: "http://127.0.0.1/stub"
+  });
+
+  for (const name of [
+    "finance_customer_receivable_unpaid",
+    "finance_supplier_payable_unpaid",
+    "finance_contract_receivable_unpaid",
+    "finance_single_project_payable_unpaid"
+  ]) {
+    const groups = (config.templates?.[name]?.scoring?.mustContainAny ?? []) as string[][];
+    assert.equal(groups.length, 1, `${name} should only hard-check the business metric wording`);
+  }
+});
+
 test("financeqa preset keeps business anchors in configuration", () => {
   const config = loadConfig("presets/financeqa.yaml", {
     OPENCLAW_AGENT_CMD: "node examples/runners/openclaw_ssh_runner.mjs --host clawdbot --question-file {questionFile} --session-id {sessionId}",
