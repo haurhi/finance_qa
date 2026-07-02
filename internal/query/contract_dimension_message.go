@@ -50,12 +50,30 @@ func buildContractDimensionMessage(summary contractDimensionSummary) string {
 		}
 		return message
 	case "supplier_contract":
+		if askedTopic == "payable" {
+			return fmt.Sprintf("[%s] %s 项目应付（应付未付/未付款）：应付未付 %.2f 元。补充项目成本 %.2f 元、已付款 %.2f 元；现金口径实际付款 %.2f 元。",
+				summary.Entity,
+				summary.Period,
+				anyToFloat64(bookView["payable_amount"]),
+				anyToFloat64(bookView["contract_cost"]),
+				anyToFloat64(bookView["contract_paid"]),
+				anyToFloat64(cashView["cash_paid_amount"]))
+		}
 		return fmt.Sprintf("[%s] %s 先看现金口径：实际付款 %.2f 元。再看财务口径：合同成本 %.2f 元。",
 			summary.Entity,
 			summary.Period,
 			anyToFloat64(cashView["cash_paid_amount"]),
 			anyToFloat64(bookView["contract_cost"]))
 	case "mixed_contract":
+		if askedTopic == "payable" {
+			return fmt.Sprintf("[%s] %s 项目应付（应付未付/未付款）：应付未付 %.2f 元。补充项目成本 %.2f 元、已付款 %.2f 元；现金口径付款 %.2f 元。",
+				summary.Entity,
+				summary.Period,
+				anyToFloat64(bookView["payable_amount"]),
+				anyToFloat64(bookView["cost_settlement"]),
+				anyToFloat64(bookView["contract_paid"]),
+				anyToFloat64(cashView["cash_paid_amount"]))
+		}
 		return fmt.Sprintf("[%s] %s 先看现金口径：到账 %.2f 元、付款 %.2f 元。再看财务口径：收入结算 %.2f 元、合同成本 %.2f 元。",
 			summary.Entity,
 			summary.Period,

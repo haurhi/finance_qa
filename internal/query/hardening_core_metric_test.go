@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -186,6 +187,58 @@ func TestIntervalCoreMetricQuestionClampsToAvailablePeriods(t *testing.T) {
 	}
 	if got := res.Data["period"]; got != "2026-01~2026-03" {
 		t.Fatalf("period = %v, want 2026-01~2026-03", got)
+	}
+}
+
+func TestLatestCompleteBookMetricUsesLatestBookDataMonth(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "hardening-latest-book-month.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	stmts := []string{
+		`CREATE TABLE income_statement (company TEXT, period TEXT, item_name TEXT, current_amount REAL, cumulative_amount REAL)`,
+		`CREATE TABLE bank_statement (company TEXT, transaction_date TEXT, credit_amount REAL, debit_amount REAL, counterparty_name TEXT, summary TEXT)`,
+		`CREATE TABLE journal (company TEXT, period TEXT, voucher_date TEXT, voucher_no TEXT, account_code TEXT, account_name TEXT, summary TEXT, direction TEXT, amount REAL, debit_amount REAL, credit_amount REAL, counterparty TEXT)`,
+		`CREATE TABLE balance_sheet (company TEXT, period TEXT, account_code TEXT, account_name TEXT, opening_balance REAL, closing_balance REAL)`,
+		`CREATE TABLE balance_detail (company TEXT, year INTEGER, period TEXT, account_code TEXT, account_name TEXT, opening_debit REAL, opening_credit REAL, current_debit REAL, current_credit REAL, closing_debit REAL, closing_credit REAL)`,
+		`CREATE TABLE fin_contracts (contract_id TEXT PRIMARY KEY, customer_name TEXT, contract_content TEXT)`,
+		`CREATE TABLE fin_fund_income (id INTEGER PRIMARY KEY AUTOINCREMENT, contract_id TEXT, year_month TEXT, source_report_type TEXT, source_sheet_name TEXT, settlement_amount REAL, received_amount REAL, is_invoiced TEXT, invoice_amount REAL)`,
+		`INSERT INTO journal(company, period, voucher_date, voucher_no, account_code, account_name, summary, direction, amount, debit_amount, credit_amount, counterparty) VALUES
+		 ('测试公司','2026-03','2026-03-31','记-0001','600101','主营业务收入','确认3月收入','贷',1000,0,1000,'客户A'),
+		 ('测试公司','2026-03','2026-03-31','记-0002','640101','主营业务成本','确认3月成本','借',700,700,0,'供应商A')`,
+		`INSERT INTO bank_statement(company, transaction_date, credit_amount, debit_amount, counterparty_name, summary)
+		 VALUES ('测试公司','2026-03-31',800,600,'客户A','3月收付')`,
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-JUNE','六月客户','六月项目')`,
+		`INSERT INTO fin_fund_income(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, received_amount, is_invoiced, invoice_amount)
+		 VALUES ('C-JUNE','2026-06','contract_fund_income','26年6月收入明细',100,100,'是',100)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec stmt failed: %v", err)
+		}
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.Query("最新完整月份账上净利润是多少？")
+	if !res.Success {
+		t.Fatalf("query failed: message=%s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["period"]; got != "2026-03" {
+		t.Fatalf("period = %v, want latest book data month 2026-03; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := res.Data["data_ready"]; got != true {
+		t.Fatalf("data_ready = %v, want true; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if strings.Contains(res.Message, "2026-06") || strings.Contains(res.Message, "没有可用数据") {
+		t.Fatalf("message should proactively answer the latest book data month instead of June no-data, got: %s", res.Message)
 	}
 }
 

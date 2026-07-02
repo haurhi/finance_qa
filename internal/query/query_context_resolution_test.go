@@ -115,6 +115,35 @@ func TestExplicitBankCashFlowQueryAnswersAllRequestedAmounts(t *testing.T) {
 	}
 }
 
+func TestLatestCompleteBankCashFlowUsesLatestBankDataMonth(t *testing.T) {
+	dbPath := buildQueryContextResolutionDB(t)
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.Query("银行卡最近完整月份实际到账和实际支出分别是多少？")
+	if !res.Success {
+		t.Fatalf("query success = false, message=%s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["period_to"]; got != "2026-03" {
+		t.Fatalf("period_to = %v, want latest bank data month 2026-03; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if !strings.Contains(res.Message, "2026-03") {
+		t.Fatalf("message should answer from latest bank data month, got: %s", res.Message)
+	}
+	if strings.Contains(res.Message, "2026-06") {
+		t.Fatalf("message should not answer the natural previous month when bank data is missing, got: %s", res.Message)
+	}
+	if got := anyToFloat64(res.Data["bank_credit_total"]); got != 1200 {
+		t.Fatalf("bank_credit_total = %v, want 1200; data=%+v", got, res.Data)
+	}
+	if got := anyToFloat64(res.Data["bank_debit_total"]); got != 500 {
+		t.Fatalf("bank_debit_total = %v, want 500; data=%+v", got, res.Data)
+	}
+}
+
 func TestCashOnHandQuestionAnswersBalanceAndBankFlow(t *testing.T) {
 	dbPath := buildQueryContextResolutionDB(t)
 	engine, err := NewEngine(dbPath, "测试公司")

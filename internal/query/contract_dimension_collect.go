@@ -30,14 +30,23 @@ func (e *Engine) collectContractDimensionSummaryForPeriod(question, entity, from
 	}
 
 	role := "unknown"
+	coverageNote := ""
 	if askedTopic != "content" {
 		role = e.detectContractRole(entity, from, to)
 		if role == "unknown" {
-			return contractDimensionSummary{}, errors.New("contract role not found")
+			actualFrom, actualTo, fallbackRole, note := e.resolveContractDimensionFallbackPeriod(question, entity, from, to, askedTopic)
+			if fallbackRole == "unknown" {
+				return contractDimensionSummary{}, errors.New("contract role not found")
+			}
+			from, to, role = actualFrom, actualTo, fallbackRole
+			coverageNote = note
 		}
 	}
 
 	summary := newContractDimensionSummary(entity, role, from, to, askedTopic, contracts, cfg)
+	if strings.TrimSpace(coverageNote) != "" {
+		summary.CalculationLog = append(summary.CalculationLog, coverageNote)
+	}
 	if askedTopic == "content" {
 		summary.Role = "contract_content"
 		summary.Data["role"] = "contract_content"
@@ -64,6 +73,45 @@ func (e *Engine) collectContractDimensionSummaryForPeriod(question, entity, from
 
 	applyContractPerspectiveAliases(summary.Data)
 	return summary, nil
+}
+
+func (e *Engine) resolveContractDimensionFallbackPeriod(question, entity, from, to, askedTopic string) (string, string, string, string) {
+	if !contractDimensionCanUseCostLatestPeriod(question, askedTopic) {
+		return from, to, "unknown", ""
+	}
+	latest := e.latestContractFinancePeriodForEntity(costSettlementTotalsSpec(), "%"+entity+"%", to)
+	if latest == "" {
+		return from, to, "unknown", ""
+	}
+	role := e.detectContractRole(entity, latest, latest)
+	if role == "unknown" {
+		return from, to, "unknown", ""
+	}
+	note := fmt.Sprintf("[合同维度覆盖] requested=%s actual=%s reason=请求期间无项目成本记录，改用该合同/供应商最新项目成本账期",
+		displayPeriod(from, to),
+		displayPeriod(latest, latest))
+	return latest, latest, role, note
+}
+
+func contractDimensionCanUseCostLatestPeriod(question, askedTopic string) bool {
+	switch askedTopic {
+	case "payable", "cost":
+	default:
+		return false
+	}
+	return contractAggregateCanUseLatestAvailablePeriod(question)
+}
+
+func (e *Engine) latestContractFinancePeriodForEntity(spec contractFinanceTotalsSpec, like, atOrBefore string) string {
+	upper := strings.TrimSpace(atOrBefore)
+	if upper == "" {
+		upper = "9999-12"
+	}
+	_, latest, ok := e.contractFinanceDataBounds(spec, "", upper, like)
+	if !ok {
+		return ""
+	}
+	return latest
 }
 
 func newContractDimensionSummary(entity, role, from, to, askedTopic string, contracts []contractDimensionRow, cfg RuleConfig) contractDimensionSummary {

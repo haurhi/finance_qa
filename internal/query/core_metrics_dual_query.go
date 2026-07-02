@@ -10,6 +10,11 @@ func (e *Engine) queryDualPerspectiveForCoreMetric(question, from, to string) Re
 	request := resolveCoreMetricRequestWithConfig(question, metricDisplayName(detectCoreMetricWithConfig(question, cfg)), cfg)
 	coverage := e.resolveCoreMetricCoverageForRequest(from, to, request)
 	requestedPeriodLabel := displayPeriod(from, to)
+	if !coverage.HasData && contractAggregateCanUseLatestAvailablePeriod(question) {
+		if fallback := latestAvailableCoreMetricCoverage(coverage); fallback.HasData {
+			coverage = fallback
+		}
+	}
 	if !coverage.HasData {
 		cutoff := coverage.AvailableTo
 		if strings.TrimSpace(cutoff) == "" {
@@ -79,6 +84,18 @@ func (e *Engine) queryDualPerspectiveForCoreMetric(question, from, to string) Re
 		CalculationLogs: logs,
 	}
 	return annotateJournalTaxDisclosure(result, strings.Contains(unified.AccrualFrom, "journal"))
+}
+
+func latestAvailableCoreMetricCoverage(coverage coreMetricCoverage) coreMetricCoverage {
+	latest := strings.TrimSpace(coverage.AvailableTo)
+	if latest == "" {
+		return coverage
+	}
+	coverage.ActualFrom = latest
+	coverage.ActualTo = latest
+	coverage.Truncated = coverage.RequestedFrom != latest || coverage.RequestedTo != latest
+	coverage.HasData = true
+	return coverage
 }
 
 func formatBool(v bool) string {

@@ -7,6 +7,8 @@ import (
 )
 
 func (e *Engine) queryBankCashFlow(question, from, to string) Result {
+	actualFrom, actualTo, adjusted, coverageNote := e.resolveBankCashFlowPeriod(question, from, to)
+	from, to = actualFrom, actualTo
 	e.calc.ResetTrace()
 	cash, err := e.calc.ComputeCashFlow(e.Company, from, to)
 	if err != nil {
@@ -35,14 +37,81 @@ func (e *Engine) queryBankCashFlow(question, from, to string) Result {
 			"period":                   periodLabel,
 			"period_from":              from,
 			"period_to":                to,
+			"period_adjusted":          adjusted,
+			"bank_credit_total":        cash.Income,
+			"bank_debit_total":         cash.Expense,
+			"net_cash_inflow":          cash.Net,
 			"cash_flow":                buildCoreMetricCashFlowSummary(cash),
 			"cash_view":                buildCoreMetricCashFlowSummary(cash),
 			"source_primary_tables":    []string{"fin_bank_statement"},
 			"source_supporting_tables": []string{},
 		},
 		ExecutedSQL:     append([]string{}, e.calc.ExecutedSQLs...),
-		CalculationLogs: append([]string{}, e.calc.CalculationLogs...),
+		CalculationLogs: appendBankCoverageLog(coverageNote, e.calc.CalculationLogs),
 	}
+}
+
+func (e *Engine) resolveBankCashFlowPeriod(question, from, to string) (string, string, bool, string) {
+	from = strings.TrimSpace(from)
+	to = strings.TrimSpace(to)
+	if from == "" || to == "" {
+		return from, to, false, ""
+	}
+	if e.bankStatementHasAmountRows(from, to) {
+		return from, to, false, ""
+	}
+	if !contractAggregateCanUseLatestAvailablePeriod(question) {
+		return from, to, false, ""
+	}
+	latest := e.latestBankStatementPeriodWithAmountRows()
+	if latest == "" {
+		return from, to, false, ""
+	}
+	fallbackFrom := bankCashFlowFallbackPeriodFrom(question, latest)
+	if fallbackFrom == "" {
+		fallbackFrom = latest
+	}
+	if !e.bankStatementHasAmountRows(fallbackFrom, latest) {
+		fallbackFrom = latest
+		if !e.bankStatementHasAmountRows(fallbackFrom, latest) {
+			return from, to, false, ""
+		}
+	}
+	if fallbackFrom == from && latest == to {
+		return from, to, false, ""
+	}
+	note := fmt.Sprintf("[银行流水覆盖] requested=%s actual=%s reason=请求期间无银行流水金额记录，改用银行表最新可用期间",
+		displayPeriod(from, to),
+		displayPeriod(fallbackFrom, latest))
+	return fallbackFrom, latest, true, note
+}
+
+func bankCashFlowFallbackPeriodFrom(question, latest string) string {
+	latest = strings.TrimSpace(latest)
+	if latest == "" {
+		return ""
+	}
+	q := strings.TrimSpace(question)
+	if containsAny(q, []string{"至今", "到现在", "截至", "截止", "累计", "今年", "本年", "年初"}) {
+		if year, _ := parsePeriod(latest); year > 0 {
+			return fmt.Sprintf("%04d-01", year)
+		}
+	}
+	if containsAny(q, []string{"这季度", "这个季度", "本季度", "季度"}) {
+		if year, month := parsePeriod(latest); year > 0 && month > 0 {
+			startMonth := ((month - 1) / 3 * 3) + 1
+			return fmt.Sprintf("%04d-%02d", year, startMonth)
+		}
+	}
+	return latest
+}
+
+func appendBankCoverageLog(note string, logs []string) []string {
+	out := make([]string, 0, len(logs)+1)
+	if strings.TrimSpace(note) != "" {
+		out = append(out, note)
+	}
+	return append(out, logs...)
 }
 
 func asksFullBankCashFlow(q string) bool {

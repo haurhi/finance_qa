@@ -500,6 +500,104 @@ func TestUnpaidProjectRosterQuestionReturnsProjectPayableItems(t *testing.T) {
 	}
 }
 
+func TestSingleProjectPayableQuestionUsesCostMinusPaid(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	stmts := []string{
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-IP-001','深圳市数衡数据科技有限公司','IP流量服务采购合同')`,
+		`INSERT INTO fin_cost_settlements(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, paid_amount, is_invoiced, invoice_amount) VALUES
+		 ('C-IP-001','2026-04','contract_revenue_cost','成本-月度结算',29571.93,29571.93,'是',29571.93),
+		 ('C-IP-001','2026-05','contract_revenue_cost','成本-月度结算',29571.93,0,'否',0)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec stmt failed: %v\n%s", err, stmt)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.June, 10, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.Query("IP流量服务采购合同项目应付未付多少？")
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	bookView, ok := res.Data["book_view"].(map[string]any)
+	if !ok {
+		t.Fatalf("book_view missing: %+v", res.Data)
+	}
+	if got := anyToFloat64(bookView["payable_amount"]); got != 29571.93 {
+		t.Fatalf("book_view.payable_amount = %v, want cost-paid 29571.93; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := anyToFloat64(res.Data["total"]); got != 29571.93 {
+		t.Fatalf("total = %v, want payable 29571.93; data=%+v", got, res.Data)
+	}
+	if strings.Contains(res.Message, "应付未付 59143.86") {
+		t.Fatalf("message should not report total cost as unpaid payable, got %q", res.Message)
+	}
+	if !strings.Contains(res.Message, "应付未付 29571.93") {
+		t.Fatalf("message should report cost minus paid as payable, got %q", res.Message)
+	}
+}
+
+func TestSupplierProjectPayableUsesLatestProjectPaidAmount(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	stmts := []string{
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-ZX-001','南京众信数通智能科技有限公司','推广数据合同-京东')`,
+		`INSERT INTO fin_cost_settlements(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, paid_amount, is_invoiced, invoice_amount) VALUES
+		 ('C-ZX-001','2026-05','contract_revenue_cost','成本-月度结算',169444.35,0,'是',169444.35),
+		 ('C-ZX-001','2026-06','contract_revenue_cost','成本-月度结算',245367.43,414811.78,'是',245367.43)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec stmt failed: %v\n%s", err, stmt)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.Query("南京众信数通智能科技有限公司项目应付未付还有多少？")
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["period_to"]; got != "2026-06" {
+		t.Fatalf("period_to = %v, want latest project cost data month 2026-06; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	bookView, ok := res.Data["book_view"].(map[string]any)
+	if !ok {
+		t.Fatalf("book_view missing: %+v", res.Data)
+	}
+	if got := anyToFloat64(bookView["contract_paid"]); got != 414811.78 {
+		t.Fatalf("book_view.contract_paid = %v, want project-table paid amount 414811.78; data=%+v", got, res.Data)
+	}
+	if got := anyToFloat64(bookView["payable_amount"]); got != 0 {
+		t.Fatalf("book_view.payable_amount = %v, want 0 after latest payment coverage; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if !strings.Contains(res.Message, "应付未付 0.00") {
+		t.Fatalf("message should report zero payable after latest payment coverage, got %q", res.Message)
+	}
+}
+
 func TestExplicitReceivedInvoiceUnpaidProjectRosterUsesInvoiceOpenItems(t *testing.T) {
 	dbPath := buildContractARAPPriorityDB(t)
 	db, err := sql.Open("sqlite", dbPath)
