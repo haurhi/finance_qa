@@ -857,7 +857,8 @@ test("financeqa snapshot reference provider computes accounting and cashflow cov
       fin_journal: [
         { company: "DefaultCompany", period: "2026-06", voucher_date: "2026-06-10", account_code: "6001", account_name: "主营业务收入", summary: "确认收入", direction: "贷", amount: 2500, debit_amount: 0, credit_amount: 2500 },
         { company: "DefaultCompany", period: "2026-06", voucher_date: "2026-06-11", account_code: "6401", account_name: "主营业务成本", summary: "结转成本", direction: "借", amount: 700, debit_amount: 700, credit_amount: 0 },
-        { company: "DefaultCompany", period: "2026-06", voucher_date: "2026-06-12", account_code: "6602", account_name: "管理费用", summary: "管理费用", direction: "借", amount: 300, debit_amount: 300, credit_amount: 0 }
+        { company: "DefaultCompany", period: "2026-06", voucher_date: "2026-06-12", account_code: "6602", account_name: "管理费用", summary: "管理费用", direction: "借", amount: 300, debit_amount: 300, credit_amount: 0 },
+        { company: "DefaultCompany", period: "2026-06", voucher_date: "2026-06-30", account_code: "4103", account_name: "本年利润", summary: "结转本年利润", direction: "贷", amount: 1200, debit_amount: 0, credit_amount: 1200 }
       ],
       fin_file_mappings: [
         { table_type: "bank-statement", period: "2026-Q2", file_name: "银行流水Q2.xlsx", updated_at: "2026-07-02T08:00:00+08:00" },
@@ -883,14 +884,14 @@ test("financeqa snapshot reference provider computes accounting and cashflow cov
     {
       template: "finance_journal_profit",
       metric: "账上净利润",
-      amount: 1500,
-      required: [/账上确认收入 2500\.00 元/, /账上成本及费用 1000\.00 元/, /序时账口径/, /默认未剔税/, /序时账Q2\.xlsx/]
+      amount: 1200,
+      required: [/账上确认收入 2500\.00 元/, /账上成本及费用 1000\.00 元/, /账上净利润 1200\.00 元/, /序时账口径/, /默认未剔税/, /序时账Q2\.xlsx/]
     },
     {
       template: "finance_profit_cash_reconciliation",
       metric: "现金账上差异",
-      amount: 800,
-      required: [/银行净流入 2300\.00 元/, /账上净利润 1500\.00 元/, /差异金额 800\.00 元/, /口径不同/]
+      amount: 1100,
+      required: [/银行净流入 2300\.00 元/, /账上净利润 1200\.00 元/, /差异金额 1100\.00 元/, /口径不同/]
     }
   ];
 

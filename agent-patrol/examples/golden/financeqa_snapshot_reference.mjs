@@ -742,10 +742,15 @@ function journalTotals(rows) {
   const costExpense = round2(sumBy(rows, (row) => isCostOrExpenseAccount(row)
     ? Math.max(row.debit_amount - row.credit_amount, 0)
     : 0));
+  const profitRows = rows.filter((row) => isCurrentYearProfitAccount(row));
+  const currentYearProfit = profitRows.length > 0
+    ? round2(sumBy(profitRows, (row) => row.credit_amount - row.debit_amount))
+    : undefined;
   return {
     revenue,
     cost_expense: costExpense,
-    net_profit: round2(revenue - costExpense)
+    net_profit: currentYearProfit ?? round2(revenue - costExpense),
+    net_profit_basis: currentYearProfit === undefined ? "revenue_minus_cost_expense" : "current_year_profit_account"
   };
 }
 
@@ -789,6 +794,10 @@ function isCostOrExpenseAccount(row) {
     || row.account_name.includes("成本")
     || row.account_name.includes("费用")
     || row.account_name.includes("税金及附加");
+}
+
+function isCurrentYearProfitAccount(row) {
+  return accountCodeStarts(row, ["4103"]) || row.account_name.includes("本年利润");
 }
 
 function accountCodeStarts(row, prefixes) {
