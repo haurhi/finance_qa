@@ -71,7 +71,7 @@ func (e *Engine) applyQueryPriorityAdjustments(q string, intent Intent, spec Que
 		entity = matched
 		spec.Entity = matched
 	}
-	anchor = e.getLatestContractPeriodAnchor()
+	anchor = e.periodParserAnchorForQuestion(q, e.getLatestContractPeriodAnchor())
 	from, to := extractContractQuestionPeriods(q, anchor)
 	subPeriod, _ := extractReceiptSubPeriod(q, from, to)
 	spec.QueryFamily = QueryFamilyContractDimension

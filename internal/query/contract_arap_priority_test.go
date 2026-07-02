@@ -654,6 +654,53 @@ func TestSupplierProjectPayableRangeToLastCompleteMonthUsesCostTableBusinessCuto
 	}
 }
 
+func TestSupplierProjectPayableRangeToLastCompleteMonthUsesDataMonthAnchorWithoutAsOf(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	stmts := []string{
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-LY-002','南京林悦智能科技有限公司','行业商品数据采购合同')`,
+		`INSERT INTO fin_cost_settlements(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, paid_amount, is_invoiced, invoice_amount) VALUES
+		 ('C-LY-002','2025-10','contract_revenue_cost','成本-月度结算',1000,200,'是',1000),
+		 ('C-LY-002','2026-05','contract_revenue_cost','成本-月度结算',500,100,'是',500),
+		 ('C-LY-002','2026-06','contract_revenue_cost','成本-月度结算',700,700,'是',700)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec stmt failed: %v\n%s", err, stmt)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司")
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.Query("南京林悦智能科技有限公司，2025年10月到上个完整自然月月底项目应付未付还有多少？")
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["period"]; got != "2025-10~2026-06" {
+		t.Fatalf("period = %v, want latest cost data cutoff 2025-10~2026-06; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := res.Data["period_to"]; got != "2026-06" {
+		t.Fatalf("period_to = %v, want latest cost data month 2026-06; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	bookView, ok := res.Data["book_view"].(map[string]any)
+	if !ok {
+		t.Fatalf("book_view missing: %+v", res.Data)
+	}
+	if got := anyToFloat64(bookView["payable_amount"]); got != 1200 {
+		t.Fatalf("book_view.payable_amount = %v, want project cost minus paid through 2026-06; message=%s data=%+v", got, res.Message, res.Data)
+	}
+}
+
 func TestContractContentExactMentionBeatsShortCustomerAlias(t *testing.T) {
 	dbPath := buildContractARAPPriorityDB(t)
 	db, err := sql.Open("sqlite", dbPath)

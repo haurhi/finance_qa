@@ -37,7 +37,7 @@ func (e *Engine) decideBossRoute(ctx context.Context, spec QuerySpec) (QuerySpec
 			rewrite.SubPeriod = spec.SubPeriod
 			spec.BossRewrite = rewrite
 		} else {
-			contractAnchor := e.getLatestContractPeriodAnchor()
+			contractAnchor := e.periodParserAnchorForQuestion(spec.NormalizedQuestion, e.getLatestContractPeriodAnchor())
 			rewrite = RewriteBossQuery(spec.NormalizedQuestion, contractAnchor)
 			if rewrite.Perspective == BossPerspectiveContractFirst {
 				from, to := extractContractQuestionPeriods(spec.NormalizedQuestion, contractAnchor)
