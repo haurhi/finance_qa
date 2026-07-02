@@ -144,6 +144,16 @@ func TestRewriteBossQueryKeepsExplicitStartToLastCompleteNaturalMonth(t *testing
 	}
 }
 
+func TestBuildQuerySpecSupportsFourDigitLooseYearRange(t *testing.T) {
+	anchor := time.Date(2026, time.June, 28, 0, 0, 0, 0, time.UTC)
+
+	spec := BuildQuerySpec("列一下2025年至2026年还有未付款的项目和金额。", anchor)
+
+	if spec.PeriodFrom != "2025-01" || spec.PeriodTo != "2026-05" {
+		t.Fatalf("BuildQuerySpec period = %s~%s, want 2025-01~2026-05", spec.PeriodFrom, spec.PeriodTo)
+	}
+}
+
 func TestBuildQuerySpecCarriesBossRewrite(t *testing.T) {
 	anchor := time.Date(2026, time.April, 25, 0, 0, 0, 0, time.UTC)
 

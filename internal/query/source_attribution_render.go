@@ -41,10 +41,13 @@ func (e *Engine) annotateSourceAttribution(spec QuerySpec, result Result) Result
 	primaryDocs := e.sourceDisplaysForTables(spec, primaryTables, metadata, primaryPartitions)
 	supportingDocs := e.sourceDisplaysForTables(spec, supportingTables, metadata, supportingPartitions)
 	sourceNote := buildSourceNote(primaryDocs, supportingDocs)
-	if sourceNote == "" {
-		return result
-	}
 	sourceUpdateNote := e.buildSourceUpdateNote(spec, collected, metadata)
+	if sourceNote == "" {
+		sourceNote = "来源：未记录"
+	}
+	if sourceUpdateNote == "" {
+		sourceUpdateNote = "来源更新时间：未记录"
+	}
 
 	result.Data["source_tables"] = collected
 	result.Data["primary_source_tables"] = primaryTables
@@ -68,14 +71,12 @@ func (e *Engine) annotateSourceAttribution(spec QuerySpec, result Result) Result
 	}
 	result.Data["source_note"] = sourceNote
 	result.Data["source_summary"] = sourceNote
-	if sourceUpdateNote != "" {
-		result.Data["source_update_note"] = sourceUpdateNote
-	}
+	result.Data["source_update_note"] = sourceUpdateNote
 
 	if !strings.Contains(result.Message, "来源：") {
 		result.Message = strings.TrimSpace(result.Message) + "\n" + sourceNote
 	}
-	if sourceUpdateNote != "" && !strings.Contains(result.Message, "来源更新时间：") {
+	if !strings.Contains(result.Message, "来源更新时间：") {
 		result.Message = strings.TrimSpace(result.Message) + "\n" + sourceUpdateNote
 	}
 	return result
@@ -96,6 +97,9 @@ func (e *Engine) annotateContractDetailSourceAttribution(result Result, fallback
 		if !strings.Contains(result.Message, "来源：") {
 			result.Message = strings.TrimSpace(result.Message) + "\n" + sourceNote
 		}
+	}
+	if sourceNote != "" && sourceUpdateNote == "" {
+		sourceUpdateNote = "来源更新时间：未记录"
 	}
 	if sourceUpdateNote != "" {
 		result.Data["source_update_note"] = sourceUpdateNote

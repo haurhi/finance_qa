@@ -118,10 +118,16 @@ func TestExtractPeriodWithNowTreatsStartToNowAsCompleteMonthRange(t *testing.T) 
 func TestExtractPeriodWithNowSupportsLooseTwoDigitYearRangeThroughLastCompleteMonth(t *testing.T) {
 	anchor := time.Date(2026, time.June, 28, 0, 0, 0, 0, time.UTC)
 
-	from, to := ExtractPeriodWithNow("25年至26年未付款的项目及对应金额有哪些？", anchor)
+	cases := []string{
+		"25年至26年未付款的项目及对应金额有哪些？",
+		"列一下2025年至2026年还有未付款的项目和金额。",
+	}
 
-	if from != "2025-01" || to != "2026-05" {
-		t.Fatalf("ExtractPeriodWithNow() = (%s,%s), want (2025-01,2026-05)", from, to)
+	for _, q := range cases {
+		from, to := ExtractPeriodWithNow(q, anchor)
+		if from != "2025-01" || to != "2026-05" {
+			t.Fatalf("ExtractPeriodWithNow(%q) = (%s,%s), want (2025-01,2026-05)", q, from, to)
+		}
 	}
 }
 

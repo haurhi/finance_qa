@@ -32,6 +32,11 @@ func (e *Engine) collectCustomerContractSummary(summary contractDimensionSummary
 		"received_amount": cashReceived,
 		"view":            "bank_cash_collection",
 	}
+	if summary.Data["asked_topic"] == "receivable" {
+		summary.Data["total"] = receivableAmount
+		summary.Data["metric_label"] = "项目应收（应收未收）"
+		summary.Data["business_basis"] = "项目收入口径：结算金额减已到账，表示应收未收。"
+	}
 	if hasSubPeriod {
 		subTotals, err := e.collectFundIncomeTotals(context.Background(), subPeriod, subPeriod, like)
 		if err != nil {

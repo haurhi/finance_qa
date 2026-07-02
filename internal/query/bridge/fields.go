@@ -51,12 +51,45 @@ func BuildHostSummaryContract(data map[string]any, query string) map[string]any 
 // BuildFinalAnswer 构建 final_answer 字段
 // 优先使用 message，如有 boss_reply_text 则使用
 func BuildFinalAnswer(data map[string]any, message string) string {
+	text := ""
 	// 如果 Data 里已有 boss_reply_text，直接用它
 	if text := getString(data, "boss_reply_text"); text != "" {
-		return text
+		return appendFinalAnswerSourceNotes(text, data)
 	}
 	// 否则使用 Message
-	return message
+	text = message
+	return appendFinalAnswerSourceNotes(text, data)
+}
+
+func appendFinalAnswerSourceNotes(text string, data map[string]any) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return text
+	}
+	for _, note := range []string{
+		firstNonEmptyString(getString(data, "source_note"), getString(data, "source_summary")),
+		getString(data, "source_update_note"),
+	} {
+		note = strings.TrimSpace(note)
+		if note == "" {
+			continue
+		}
+		if strings.Contains(text, note) {
+			continue
+		}
+		text += "\n" + note
+	}
+	return text
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // isContractStrictMissing 检查是否是合同严格缺失状态

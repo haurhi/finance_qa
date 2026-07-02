@@ -364,6 +364,16 @@ VALUES ('fund-income', '2026-Q1', '南京优集数据科技有限公司', 'tenan
 	if strings.Contains(sourceNote, "优集资金收入计算表-副本.xlsx") || strings.Contains(sourceNote, "合同信息表") {
 		t.Fatalf("source_note should not fall back to table comments when current-period mapping is missing, got %q", sourceNote)
 	}
+	if sourceNote != "来源：未记录" {
+		t.Fatalf("source_note should still expose an explicit unknown-source marker, got %q", sourceNote)
+	}
+	sourceUpdateNote, _ := res.Data["source_update_note"].(string)
+	if sourceUpdateNote != "来源更新时间：未记录" {
+		t.Fatalf("source_update_note should still expose an explicit unknown-update marker, got %q", sourceUpdateNote)
+	}
+	if !strings.Contains(res.Message, sourceNote) || !strings.Contains(res.Message, sourceUpdateNote) {
+		t.Fatalf("message should include explicit source and update markers, source=%q update=%q message=%q", sourceNote, sourceUpdateNote, res.Message)
+	}
 }
 
 func TestSourceNoteUsesFinanceFileMappingForBankStatement(t *testing.T) {

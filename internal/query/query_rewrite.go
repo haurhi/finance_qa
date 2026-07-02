@@ -232,13 +232,32 @@ func looksLikeBossRewriteNonEntity(entity string) bool {
 	if looksLikeBusinessDimensionLabel(entity) {
 		return true
 	}
+	if looksLikeProjectAggregateSyntheticEntity(entity) {
+		return true
+	}
 	return containsAny(normalized, []string{
 		"银行卡", "银行", "实际", "到账", "回款", "收款", "付款", "现金", "现金流",
 		"账上", "现在", "还有", "年初", "多了", "少了",
+		"老板", "帮我", "查一下", "看下", "看一下",
 		"应收", "应付", "账款", "开票", "收票", "发票", "未付", "未回", "未收",
 		"挂着", "还挂", "挂账", "哪头", "更重",
 		"整体", "大类", "构成", "分类", "类别", "支出", "费用", "开支",
+		"金额", "利润", "毛利", "净利", "口径", "合计", "总计", "列一下",
 	})
+}
+
+func looksLikeProjectAggregateSyntheticEntity(entity string) bool {
+	normalized := normalizeEntityText(entity)
+	if normalized == "" {
+		return false
+	}
+	if strings.Contains(normalized, "年至") && strings.Contains(normalized, "未") {
+		return true
+	}
+	if strings.Contains(normalized, "到") && strings.Contains(normalized, "未") && strings.Contains(normalized, "年") {
+		return true
+	}
+	return false
 }
 
 func detectBossGranularity(q string, metric BossMetric, hasSubPeriod bool) BossGranularity {

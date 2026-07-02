@@ -598,6 +598,155 @@ func TestSupplierProjectPayableUsesLatestProjectPaidAmount(t *testing.T) {
 	}
 }
 
+func TestSupplierProjectPayableRangeToLastCompleteMonthUsesCostTableBusinessCutoff(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	stmts := []string{
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-LY-001','南京林悦智能科技有限公司','行业商品数据采购合同')`,
+		`INSERT INTO fin_cost_settlements(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, paid_amount, is_invoiced, invoice_amount) VALUES
+		 ('C-LY-001','2025-10','contract_revenue_cost','成本-月度结算',1000,200,'是',1000),
+		 ('C-LY-001','2026-05','contract_revenue_cost','成本-月度结算',500,100,'是',500),
+		 ('C-LY-001','2026-06','contract_revenue_cost','成本-月度结算',700,700,'是',700)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec stmt failed: %v\n%s", err, stmt)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.Query("南京林悦智能科技有限公司，2025年10月到上个完整自然月月底项目应付未付还有多少？")
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["period"]; got != "2025-10~2026-06" {
+		t.Fatalf("period = %v, want 2025-10~2026-06; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := res.Data["period_to"]; got != "2026-06" {
+		t.Fatalf("period_to = %v, want cost-table business cutoff 2026-06; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	bookView, ok := res.Data["book_view"].(map[string]any)
+	if !ok {
+		t.Fatalf("book_view missing: %+v", res.Data)
+	}
+	if got := anyToFloat64(bookView["contract_cost"]); got != 2200 {
+		t.Fatalf("book_view.contract_cost = %v, want all project cost through 2026-06; data=%+v", got, res.Data)
+	}
+	if got := anyToFloat64(bookView["contract_paid"]); got != 1000 {
+		t.Fatalf("book_view.contract_paid = %v, want all project paid through 2026-06; data=%+v", got, res.Data)
+	}
+	if got := anyToFloat64(bookView["payable_amount"]); got != 1200 {
+		t.Fatalf("book_view.payable_amount = %v, want project cost minus paid; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if !strings.Contains(res.Message, "2025-10~2026-06") || !strings.Contains(res.Message, "应付未付 1200.00") {
+		t.Fatalf("message should disclose period and payable amount, got %q", res.Message)
+	}
+}
+
+func TestContractContentExactMentionBeatsShortCustomerAlias(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	stmts := []string{
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-JD-001','京东','对应-众信成本')`,
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-JD-002','北京欧特欧国际咨询有限公司','产品服务协议-京东')`,
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-JD-003','南京众信数通智能科技有限公司','推广数据合同-京东')`,
+		`INSERT INTO fin_cost_settlements(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, paid_amount, is_invoiced, invoice_amount) VALUES
+		 ('C-JD-001','2026-06','contract_revenue_cost','成本-月度结算',999,0,'是',999),
+		 ('C-JD-002','2026-06','contract_revenue_cost','成本-月度结算',1000,250,'是',1000),
+		 ('C-JD-003','2026-06','contract_revenue_cost','成本-月度结算',888,0,'是',888)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec stmt failed: %v\n%s", err, stmt)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.Query("产品服务协议-京东项目应付未付多少？")
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["entity"]; got != "产品服务协议-京东" {
+		t.Fatalf("entity = %v, want exact contract content; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := anyToFloat64(res.Data["total"]); got != 750 {
+		t.Fatalf("total = %v, want payable for exact contract only 750; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := res.Data["contract_count"]; got != 1 {
+		t.Fatalf("contract_count = %v, want one exact contract match; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if strings.HasPrefix(res.Message, "[京东]") {
+		t.Fatalf("message should not collapse exact contract content to short customer alias, got %q", res.Message)
+	}
+}
+
+func TestCodeNamedContractReceivableUsesContractDimension(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	stmts := []string{
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-A05','四川其妙科技有限公司','海外行业榜单及动态数据服务-A05')`,
+		`INSERT INTO fin_fund_income(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, received_amount, is_invoiced, invoice_amount) VALUES ('C-A05','2026-06','contract_fund_income','26年Q2收入明细',735014.80,172139.14,'否',0)`,
+		`INSERT INTO bank_statement(company, transaction_date, transaction_time, transaction_type, debit_amount, credit_amount, balance, summary, counterparty_name, counterparty_account) VALUES ('测试公司','2026-06-30','','转账',489172.75,0,0,'供应商付款','云南泽塔数据科技有限公司','')`,
+		`INSERT INTO journal(company, period, voucher_date, voucher_no, account_code, account_name, summary, direction, amount, debit_amount, credit_amount, counterparty) VALUES ('测试公司','2026-06','2026-06-30','V-ZT-1','640102','技术服务费','收到云南泽塔数据科技有限公司发票','借',489172.75,489172.75,0,'云南泽塔数据科技有限公司')`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec stmt failed: %v\n%s", err, stmt)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.Query("海外行业榜单及动态数据服务-A05还有多少没收回来？")
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["entity"]; got != "海外行业榜单及动态数据服务-A05" {
+		t.Fatalf("entity = %v, want exact contract content; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := res.Data["asked_topic"]; got != "receivable" {
+		t.Fatalf("asked_topic = %v, want receivable; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := anyToFloat64(res.Data["total"]); got != 562875.66 {
+		t.Fatalf("total = %v, want contract receivable 562875.66; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if strings.Contains(res.Message, "云南泽塔") || strings.Contains(res.Message, "供应商") {
+		t.Fatalf("contract receivable question should not route to supplier/cash evidence, got %q", res.Message)
+	}
+}
+
 func TestExplicitReceivedInvoiceUnpaidProjectRosterUsesInvoiceOpenItems(t *testing.T) {
 	dbPath := buildContractARAPPriorityDB(t)
 	db, err := sql.Open("sqlite", dbPath)
@@ -1121,6 +1270,12 @@ func TestContractAggregateDataFinalAnswerIncludesSourceLineage(t *testing.T) {
 	}
 	if !strings.Contains(finalAnswer, "来源：") {
 		t.Fatalf("data.final_answer should include source lineage, got %q", finalAnswer)
+	}
+	if !strings.Contains(finalAnswer, "来源更新时间：") {
+		t.Fatalf("data.final_answer should include source update note, got %q", finalAnswer)
+	}
+	if updateNote, _ := res.Data["source_update_note"].(string); !strings.Contains(updateNote, "来源更新时间：") {
+		t.Fatalf("source_update_note should be present for finance answers, got %q", updateNote)
 	}
 }
 

@@ -9,7 +9,7 @@ func inferContractAskedTopic(question string) string {
 		return "content"
 	case containsAny(q, []string{"利润", "毛利", "净利"}):
 		return "profit"
-	case containsAny(q, []string{"应收未收", "客户未付款", "客户没付款", "客户未支付"}):
+	case containsAny(q, []string{"应收未收", "客户未付款", "客户没付款", "客户未支付", "没收回来", "未收回", "还没收回来", "没有收回来"}):
 		return "receivable"
 	case containsAny(q, []string{"已收票未付款", "已收票未支付", "收票未付款", "收票未支付", "发票未付款", "发票未支付"}):
 		return "invoice"

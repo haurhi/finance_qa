@@ -76,10 +76,11 @@ func (e *Engine) collectContractDimensionSummaryForPeriod(question, entity, from
 }
 
 func (e *Engine) resolveContractDimensionFallbackPeriod(question, entity, from, to, askedTopic string) (string, string, string, string) {
-	if !contractDimensionCanUseCostLatestPeriod(question, askedTopic) {
+	spec, sourceLabel, ok := contractDimensionLatestPeriodSpec(question, askedTopic)
+	if !ok {
 		return from, to, "unknown", ""
 	}
-	latest := e.latestContractFinancePeriodForEntity(costSettlementTotalsSpec(), "%"+entity+"%", to)
+	latest := e.latestContractFinancePeriodForEntity(spec, "%"+entity+"%", to)
 	if latest == "" {
 		return from, to, "unknown", ""
 	}
@@ -87,19 +88,31 @@ func (e *Engine) resolveContractDimensionFallbackPeriod(question, entity, from, 
 	if role == "unknown" {
 		return from, to, "unknown", ""
 	}
-	note := fmt.Sprintf("[合同维度覆盖] requested=%s actual=%s reason=请求期间无项目成本记录，改用该合同/供应商最新项目成本账期",
+	note := fmt.Sprintf("[合同维度覆盖] requested=%s actual=%s reason=请求期间无%s记录，改用该合同/项目最新%s账期",
 		displayPeriod(from, to),
-		displayPeriod(latest, latest))
+		displayPeriod(latest, latest),
+		sourceLabel,
+		sourceLabel)
 	return latest, latest, role, note
 }
 
 func contractDimensionCanUseCostLatestPeriod(question, askedTopic string) bool {
+	_, _, ok := contractDimensionLatestPeriodSpec(question, askedTopic)
+	return ok
+}
+
+func contractDimensionLatestPeriodSpec(question, askedTopic string) (contractFinanceTotalsSpec, string, bool) {
+	if !contractAggregateCanUseLatestAvailablePeriod(question) {
+		return contractFinanceTotalsSpec{}, "", false
+	}
 	switch askedTopic {
 	case "payable", "cost":
+		return costSettlementTotalsSpec(), "项目成本", true
+	case "receivable", "revenue", "receipts", "invoice":
+		return fundIncomeTotalsSpec(), "项目收入", true
 	default:
-		return false
+		return contractFinanceTotalsSpec{}, "", false
 	}
-	return contractAggregateCanUseLatestAvailablePeriod(question)
 }
 
 func (e *Engine) latestContractFinancePeriodForEntity(spec contractFinanceTotalsSpec, like, atOrBefore string) string {

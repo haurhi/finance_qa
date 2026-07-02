@@ -71,6 +71,9 @@ func (e *Engine) resolveContractSubject(question, entity string) string {
 	}
 	nq := normalizeEntityText(question)
 	if nq != "" {
+		if content := e.resolveExactContractContentMention(question); content != "" {
+			return content
+		}
 		for _, name := range e.contractCustomerCandidates() {
 			nm := normalizeEntityText(name)
 			if len([]rune(nm)) < 2 {
@@ -124,6 +127,27 @@ func (e *Engine) resolveContractSubject(question, entity string) string {
 		}
 	}
 	return ""
+}
+
+func (e *Engine) resolveExactContractContentMention(question string) string {
+	nq := normalizeEntityText(question)
+	if nq == "" {
+		return ""
+	}
+	best := ""
+	bestLen := 0
+	for _, name := range e.contractContentCandidates() {
+		nm := normalizeEntityText(name)
+		nameLen := len([]rune(nm))
+		if nameLen < 2 || !strings.Contains(nq, nm) {
+			continue
+		}
+		if nameLen > bestLen {
+			best = name
+			bestLen = nameLen
+		}
+	}
+	return best
 }
 
 func (e *Engine) detectContractRole(entity, from, to string) string {

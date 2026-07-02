@@ -13,21 +13,135 @@ func shouldUseContractDimension(question string) bool {
 
 func shouldUseContractDimensionWithConfig(question string, cfg RuleConfig) bool {
 	q := strings.TrimSpace(question)
-	if !strings.Contains(q, "合同") {
+	if !looksLikeContractDimensionSubject(q) {
 		return false
 	}
 	if shouldForceCompanyScopeContractAggregateWithConfig(q, cfg) {
 		return false
 	}
 	entity := extractNamedEntityFromQuestion(q)
+	if looksLikeBossRewriteNonEntity(entity) {
+		entity = ""
+	}
 	hasEntity := isRealishQueryEntity(entity)
+	hasSpecificLexicalSubject := looksLikeSpecificContractDimensionSubject(q)
+	hasOrganizationSubject := strings.TrimSpace(extractOrganizationEntityMatch(q)) != ""
+	if !hasSpecificLexicalSubject && !hasOrganizationSubject && !hasEntity && looksLikeCompanyScopeProjectAggregateQuestion(q) {
+		return false
+	}
+	hasSpecificSubject := hasSpecificLexicalSubject || hasOrganizationSubject || hasEntity
 	if shouldUseContractAggregateAnalysisQuestion(q, cfg) && !hasEntity {
 		return false
 	}
 	if !hasEntity && shouldUseCompanyScopeContractAggregateWithConfig(q, cfg) {
 		return false
 	}
+	if !hasSpecificSubject {
+		return false
+	}
+	if contractAskedTopicTriggersDimension(inferContractAskedTopic(q)) {
+		return true
+	}
 	return containsAny(q, contractPriorityKeywordsWithConfig(cfg))
+}
+
+func looksLikeContractDimensionSubject(q string) bool {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return false
+	}
+	return containsAny(q, []string{"合同", "协议", "项目"}) || hasContractContentCodeSubject(q)
+}
+
+func looksLikeSpecificContractDimensionSubject(q string) bool {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return false
+	}
+	return strings.Contains(q, "协议") || hasContractContentCodeSubject(q) || hasNamedContractPhrase(q)
+}
+
+func looksLikeCompanyScopeProjectAggregateQuestion(q string) bool {
+	q = strings.TrimSpace(q)
+	if q == "" || shouldUseExplicitFinancialAccountQuestion(q) {
+		return false
+	}
+	if containsAny(q, []string{
+		"所有项目", "全部项目", "全量项目",
+		"项目口径", "项目成本口径", "按项目口径", "按项目成本口径", "从项目口径",
+		"未付款的项目", "没有付款的项目", "未支付的项目", "没付款的项目",
+		"项目及对应金额", "项目和金额", "项目金额",
+		"哪些项目", "有哪些项目", "每个项目", "项目分别", "项目清单", "项目列表",
+	}) {
+		return true
+	}
+	if looksLikeProjectPayableUnpaidQuestion(q) {
+		return containsAny(q, []string{
+			"合计", "总计", "一共", "多少", "有哪些", "哪些", "列一下", "分别",
+			"对应金额", "金额各", "金额是多少",
+		})
+	}
+	return false
+}
+
+func hasNamedContractPhrase(q string) bool {
+	for _, idx := range markerIndexes(q, "合同") {
+		prefix := stripKnownPeriodTokens(q[:idx])
+		prefix = strings.Trim(prefix, " \t\n，,。；;：:的从按看")
+		if len([]rune(normalizeEntityText(prefix))) < 2 {
+			continue
+		}
+		if looksLikeBossRewriteNonEntity(prefix) || shouldSkipEntityFragment(prefix, 2) {
+			continue
+		}
+		if containsAny(normalizeEntityText(prefix), []string{"所有", "全部", "全量", "整体", "项目口径"}) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func markerIndexes(s, marker string) []int {
+	indexes := make([]int, 0, 2)
+	offset := 0
+	for {
+		idx := strings.Index(s[offset:], marker)
+		if idx < 0 {
+			return indexes
+		}
+		absolute := offset + idx
+		indexes = append(indexes, absolute)
+		offset = absolute + len(marker)
+	}
+}
+
+func hasContractContentCodeSubject(q string) bool {
+	for _, match := range contractContentCodePattern.FindAllString(strings.TrimSpace(q), -1) {
+		upper := strings.ToUpper(match)
+		if regexp.MustCompile(`^Q[1-4]$`).MatchString(upper) {
+			continue
+		}
+		digitCount := 0
+		for _, r := range upper {
+			if r >= '0' && r <= '9' {
+				digitCount++
+			}
+		}
+		if digitCount >= 2 {
+			return true
+		}
+	}
+	return false
+}
+
+func contractAskedTopicTriggersDimension(askedTopic string) bool {
+	switch askedTopic {
+	case "receivable", "payable", "invoice", "revenue", "receipts", "payments", "cost", "profit":
+		return true
+	default:
+		return false
+	}
 }
 
 func shouldUseContractDetailQuestion(question string) bool {
@@ -155,6 +269,7 @@ func extractExplicitStandaloneYear(question string) (int, bool) {
 		return 0, false
 	}
 	specificPeriodPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`20\d{2}年\s*(?:到|至|-|~)\s*20\d{2}年`),
 		regexp.MustCompile(`20\d{2}年\s*(?:上半年|下半年|全年|整年|全年度|年度|累计|年内)`),
 		regexp.MustCompile(`20\d{2}年\s*(?:第?\s*[一二三四1234]\s*季度|Q\s*[1-4])`),
 		regexp.MustCompile(`20\d{2}年\s*([0-1]?\d|[一二三四五六七八九十两]{1,3})月`),
