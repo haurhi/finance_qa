@@ -43,8 +43,11 @@ export interface RunSuiteResult {
     total: number;
     passed: number;
     accuracy: number;
+    businessPassed: number;
+    businessAccuracy: number;
     durationMs: number;
     thresholdPassed: boolean;
+    businessThresholdPassed: boolean;
   };
 }
 
@@ -184,13 +187,18 @@ function makeSessionId(target: TargetConfig, patrolCase: PatrolCase, seed: strin
 function aggregateScores(scores: CaseScore[], minAccuracy: number, durationMs: number): RunSuiteResult["aggregate"] {
   const total = scores.length;
   const passed = scores.filter((score) => score.pass).length;
+  const businessPassed = scores.filter((score) => score.businessPass).length;
   const accuracy = total === 0 ? 0 : passed / total;
+  const businessAccuracy = total === 0 ? 0 : businessPassed / total;
   return {
     total,
     passed,
     accuracy,
+    businessPassed,
+    businessAccuracy,
     durationMs,
-    thresholdPassed: accuracy >= minAccuracy
+    thresholdPassed: accuracy >= minAccuracy,
+    businessThresholdPassed: businessAccuracy >= minAccuracy
   };
 }
 

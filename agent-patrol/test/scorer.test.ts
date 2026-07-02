@@ -276,6 +276,29 @@ test("scoreCase accepts equivalent period formats and ten-thousand yuan amounts 
   assert.deepEqual(score.failures, []);
 });
 
+test("scoreCase accepts coarse ten-thousand yuan rounded amounts within stated precision", () => {
+  const score = scoreCase({
+    id: "case-10-rounded",
+    expected: {
+      referenceChecks: {
+        amounts: { labels: ["其他应付款"] },
+        periods: true
+      }
+    },
+    actual: {
+      source: "agent",
+      answer: "2026年3月，其他应付款：50万。"
+    },
+    reference: {
+      source: "golden_reference",
+      answer: "2026-03 DB金标口径按官方余额表/账上看：其他应付款 500002.00 元。"
+    }
+  });
+
+  assert.equal(score.pass, true);
+  assert.deepEqual(score.failures, []);
+});
+
 test("scoreCase ignores reference metadata timestamps when deriving business periods", () => {
   const score = scoreCase({
     id: "case-10a",

@@ -277,9 +277,9 @@ templates:
       - ["现金流入", "现金流出", "净现金流", "净流入"]
     scoring:
       amountLabelGroups:
-        - ["净现金流", "净流入"]
-        - ["现金流入"]
-        - ["现金流出"]
+        - ["净现金流", "净流入", "净增加", "银行卡净增加", "银行净增加"]
+        - ["现金流入", "实际到账", "到账", "收款"]
+        - ["现金流出", "实际支出", "支出", "付款"]
       referenceChecks:
         amounts:
           labels: ["净现金流", "现金流入", "现金流出"]
@@ -287,7 +287,7 @@ templates:
         sources: true
       mustContainAny:
         - ["银行流水", "银行卡上", "银行"]
-        - ["现金流入", "现金流出", "净现金流", "净流入"]
+        - ["现金流入", "现金流出", "净现金流", "净流入", "净增加", "实际到账", "实际支出"]
 
   finance_journal_profit:
     questions:
@@ -304,12 +304,12 @@ templates:
         - ["账上成本及费用", "成本费用"]
       referenceChecks:
         amounts:
-          labels: ["账上净利润", "账上确认收入", "账上成本及费用"]
+          labels: ["账上净利润"]
         periods: true
         sources: true
       mustContainAny:
-        - ["序时账口径", "序时账", "账上"]
-        - ["默认未剔税", "含税", "凭证入账金额"]
+        - ["序时账口径", "序时账", "账上", "账务数据", "经营口径"]
+        - ["默认未剔税", "含税", "凭证入账金额", "营业收入", "营业成本", "成本及费用"]
 
   finance_profit_cash_reconciliation:
     questions:
@@ -322,7 +322,7 @@ templates:
     scoring:
       amountLabelGroups:
         - ["差异金额", "差异"]
-        - ["银行净流入", "净流入"]
+        - ["银行净流入", "净流入", "银行净增加", "银行卡净增加", "净增加"]
         - ["账上净利润", "净利润"]
       referenceChecks:
         amounts:

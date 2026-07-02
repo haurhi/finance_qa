@@ -383,3 +383,44 @@ test("writeReport separates core accuracy failures from source evidence failures
   });
   assert.deepEqual(summaryJson.failedCases[0].failureCategories, ["core_accuracy", "source_evidence"]);
 });
+
+test("writeReport reports business accuracy separately from evidence quality", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-report-business-accuracy-"));
+  writeReport(dir, {
+    manifest: { suite: "finance" },
+    cases: [{ id: "finance-case-6" }],
+    results: [{
+      caseId: "finance-case-6",
+      question: "银行流水净流入是多少？",
+      actual: {
+        source: "agent",
+        answer: "银行卡净增加 -633859.33 元"
+      }
+    }],
+    scores: [{
+      caseId: "finance-case-6",
+      pass: false,
+      businessPass: true,
+      failures: ["missing_source:交易查询，20260101-20260331，共143笔.xlsx"],
+      failureDetails: [{ type: "missing_source" }]
+    }],
+    aggregate: {
+      total: 1,
+      passed: 0,
+      accuracy: 0,
+      businessPassed: 1,
+      businessAccuracy: 1,
+      thresholdPassed: false,
+      businessThresholdPassed: true
+    }
+  });
+
+  const summary = fs.readFileSync(path.join(dir, "summary.md"), "utf8");
+  assert.match(summary, /Accuracy: 0\.00%/);
+  assert.match(summary, /Business Accuracy: 100\.00%/);
+
+  const summaryJson = JSON.parse(fs.readFileSync(path.join(dir, "summary.json"), "utf8"));
+  assert.equal(summaryJson.aggregate.businessPassed, 1);
+  assert.equal(summaryJson.aggregate.businessAccuracy, 1);
+  assert.deepEqual(summaryJson.failedCases[0].failureCategories, ["source_evidence"]);
+});

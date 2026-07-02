@@ -7,7 +7,16 @@ interface ReportInput {
   results: unknown[];
   scores: unknown[];
   evidence?: unknown[];
-  aggregate: { total: number; passed: number; accuracy: number; durationMs?: number };
+  aggregate: {
+    total: number;
+    passed: number;
+    accuracy: number;
+    businessPassed?: number;
+    businessAccuracy?: number;
+    durationMs?: number;
+    thresholdPassed?: boolean;
+    businessThresholdPassed?: boolean;
+  };
 }
 
 export function redactSensitive(text: string): string {
@@ -44,6 +53,9 @@ function writeJson(filePath: string, value: unknown): void {
 
 function renderSummary(input: ReportInput): string {
   const accuracy = (input.aggregate.accuracy * 100).toFixed(2);
+  const businessAccuracy = typeof input.aggregate.businessAccuracy === "number"
+    ? (input.aggregate.businessAccuracy * 100).toFixed(2)
+    : undefined;
   const failed = input.aggregate.total - input.aggregate.passed;
   const failedCases = failedCaseRows(input);
   const categoryCounts = failureCategoryCounts(failedCases);
@@ -52,9 +64,14 @@ function renderSummary(input: ReportInput): string {
     "",
     `Accuracy: ${accuracy}%`,
     `Passed: ${input.aggregate.passed}/${input.aggregate.total}`,
-    `Failed: ${failed}`,
-    ""
+    `Failed: ${failed}`
   ];
+  if (businessAccuracy !== undefined) {
+    const businessPassed = input.aggregate.businessPassed ?? 0;
+    lines.push(`Business Accuracy: ${businessAccuracy}%`);
+    lines.push(`Business Passed: ${businessPassed}/${input.aggregate.total}`);
+  }
+  lines.push("");
   const categoryNames = Object.keys(categoryCounts);
   if (categoryNames.length > 0) {
     lines.push("## Failure Categories", "");

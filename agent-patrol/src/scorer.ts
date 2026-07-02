@@ -34,6 +34,7 @@ export interface CaseFailure {
 export interface CaseScore {
   caseId: string;
   pass: boolean;
+  businessPass: boolean;
   invalid: boolean;
   failures: string[];
   failureDetails: CaseFailure[];
@@ -158,11 +159,23 @@ export function scoreCase(input: ScoreInput): CaseScore {
   return {
     caseId: input.id,
     pass: failures.length === 0,
+    businessPass: failureDetails.every((failure) => !isBusinessBlockingFailure(failure)),
     invalid: failures.includes("invalid_actual_path"),
     failures,
     failureDetails,
     warnings
   };
+}
+
+function isBusinessBlockingFailure(failure: CaseFailure): boolean {
+  return failure.type === "agent_changed_amount"
+    || failure.type === "amount_mismatch"
+    || failure.type === "period_mismatch"
+    || failure.type === "perspective_mismatch"
+    || failure.type === "invalid_actual_path"
+    || failure.type === "agent_runner_error"
+    || failure.type === "missing_reference"
+    || failure.type === "write_tool_called";
 }
 
 function mergeExpectedRules(expected: ExpectedRules, referenceAnswer: string): ExpectedRules {
@@ -194,13 +207,14 @@ function amountPresent(answer: string, value: number, label?: string, labelGroup
   const variants = amountVariants(value);
   if (label) {
     for (const candidate of amountLabelCandidates(label, labelGroups)) {
-      const presence = labeledAmountPresence(answer, candidate, variants);
+      const presence = labeledAmountPresence(answer, candidate, value, variants);
       if (presence === "match") return true;
       if (presence === "mismatch") return false;
     }
   }
   const normalizedAnswer = normalize(answer);
-  return variants.some((variant) => normalizedAnswer.includes(normalize(variant)));
+  return variants.some((variant) => normalizedAnswer.includes(normalize(variant)))
+    || moneyValuePresent(answer, value);
 }
 
 function amountLabelCandidates(label: string, labelGroups: string[] | string[][] | undefined): string[] {
@@ -217,7 +231,7 @@ function amountLabelCandidates(label: string, labelGroups: string[] | string[][]
   return candidates;
 }
 
-function labeledAmountPresence(answer: string, label: string, variants: string[]): "match" | "mismatch" | "no_amount" {
+function labeledAmountPresence(answer: string, label: string, value: number, variants: string[]): "match" | "mismatch" | "no_amount" {
   const windows = labeledWindows(answer, label);
   if (windows.length === 0) return "no_amount";
   let sawMoneyLikeWindow = false;
@@ -226,6 +240,7 @@ function labeledAmountPresence(answer: string, label: string, variants: string[]
     if (variants.some((variant) => normalizedWindow.includes(normalize(variant)))) {
       return "match";
     }
+    if (moneyValuePresent(window, value)) return "match";
     if (containsMoneyLike(window)) sawMoneyLikeWindow = true;
   }
   return sawMoneyLikeWindow ? "mismatch" : "no_amount";
@@ -267,6 +282,34 @@ function labeledWindows(answer: string, label: string): string[] {
 
 function containsMoneyLike(value: string): boolean {
   return /-?[0-9][0-9,]*(?:\.\d+)?\s*(?:万元|万|元)/.test(value);
+}
+
+function moneyValuePresent(text: string, expected: number): boolean {
+  return moneyCandidates(text).some((candidate) => Math.abs(candidate.value - expected) <= candidate.tolerance);
+}
+
+function moneyCandidates(text: string): Array<{ value: number; tolerance: number }> {
+  const candidates: Array<{ value: number; tolerance: number }> = [];
+  for (const match of text.matchAll(/(-?[0-9][0-9,]*(?:\.\d+)?)\s*(万元|万|元)/g)) {
+    const raw = match[1]!;
+    const unit = match[2]!;
+    const numeric = Number(raw.replace(/,/g, ""));
+    if (!Number.isFinite(numeric)) continue;
+    const decimals = raw.includes(".") ? raw.split(".")[1]!.length : 0;
+    if (unit === "万元" || unit === "万") {
+      const scale = 10_000;
+      candidates.push({
+        value: numeric * scale,
+        tolerance: 0.5 * scale * Math.pow(10, -decimals)
+      });
+    } else {
+      candidates.push({
+        value: numeric,
+        tolerance: decimals > 0 ? 0.005 : 0.5
+      });
+    }
+  }
+  return candidates;
 }
 
 function amountVariants(value: number): string[] {
