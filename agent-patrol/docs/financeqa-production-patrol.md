@@ -60,6 +60,34 @@ node examples/golden/financeqa_snapshot_reference.mjs \
 
 Direct `finance-query` remains diagnostic only. It must not be treated as the 90% accuracy reference when `goldenReference` is configured.
 
+The same snapshot export also writes dynamic case variables to:
+
+```bash
+tmp/reference-snapshots/financeqa-production-case-variables.json
+```
+
+Those variables provide non-zero customer, supplier, project, and contract keywords for named-entity patrol cases. They are data-derived from the snapshot and are not hardcoded in the preset.
+
+The snapshot includes the project-operation tables and the explicit accounting/cash tables needed by the production preset:
+
+- Project operation: `fin_contracts`, `fin_fund_income*`, `fin_cost_settlement*`.
+- Accounting and cash: `fin_bank_statement`, `fin_balance_detail`, `fin_balance_sheet`, `fin_journal`.
+- Source attribution: `fin_file_mappings`.
+
+## Coverage
+
+The production `daily` suite samples 14 cases per run so each current FinanceQA template family is covered every hour:
+
+- Latest project settlement revenue.
+- Project receivable unpaid and invoiced receivable unpaid.
+- Project payable unpaid, invoiced payable unpaid, and unpaid project list.
+- Named customer receivable and named supplier payable.
+- Single contract/project receivable or payable by snapshot-derived keyword.
+- Explicit balance-sheet wording: `账上` / `官方余额表` / `余额表`.
+- Explicit bank-flow wording: `银行流水` / `银行卡上` / cash in/out/net.
+- Explicit journal wording: `序时账` / `账上净利润`, including the default tax-inclusion note.
+- Reconciliation wording: bank net inflow vs book net profit difference.
+
 ## FinanceQA Metric Boundaries
 
 The FinanceQA golden templates keep project payable and invoice payable separate:

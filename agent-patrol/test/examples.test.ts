@@ -155,17 +155,24 @@ test("financeqa preset generates varied daily sample pool", () => {
     FINANCEQA_MCP_URL: "http://127.0.0.1/stub"
   });
 
-  const cases = generateCases(config, { suite: "daily", seed: "2026-06-25" });
+  const cases = generateCases(withFinanceqaEntityVariables(config), { suite: "daily", seed: "2026-06-25" });
   const questions = cases.map((item) => item.question);
 
-  assert.equal(cases.length, 8);
-  assert.equal(new Set(questions).size, 8);
+  assert.equal(cases.length, 14);
+  assert.equal(new Set(questions).size, 14);
   assert.equal(questions.some((item) => item.includes("最新月份") || item.includes("最新可见月份")), true);
   assert.equal(questions.some((item) => item.includes("上一个完整自然月月底")), true);
   assert.equal(questions.some((item) => item.includes("应收未收")), true);
   assert.equal(questions.some((item) => item.includes("应付未付") || item.includes("未付款")), true);
   assert.equal(questions.some((item) => item.includes("已开票未回款") || item.includes("已开票未收款")), true);
   assert.equal(questions.some((item) => item.includes("已收票未付款")), true);
+  assert.equal(questions.some((item) => item.includes("余额表") || item.includes("账上")), true);
+  assert.equal(questions.some((item) => item.includes("银行流水") || item.includes("银行卡上")), true);
+  assert.equal(questions.some((item) => item.includes("序时账") || (item.includes("账上") && item.includes("净利润"))), true);
+  assert.equal(questions.some((item) => item.includes("差异") || item.includes("银行净流入")), true);
+  assert.equal(questions.some((item) => item.includes("客户甲")), true);
+  assert.equal(questions.some((item) => item.includes("供应商乙")), true);
+  assert.equal(questions.some((item) => item.includes("项目Alpha") || item.includes("合同Beta")), true);
 });
 
 test("financeqa preset defines reference-check labels for finance answer comparison", () => {
@@ -203,7 +210,7 @@ test("financeqa preset template questions satisfy their configured anchors", () 
   });
   const templates = Object.keys(config.templates ?? {});
   const configWithAllCases = {
-    ...config,
+    ...withFinanceqaEntityVariables(config),
     targets: {
       finance_qa: {
         ...config.targets.finance_qa,
@@ -795,6 +802,171 @@ test("financeqa snapshot reference provider defaults as-of date to Asia Shanghai
   assert.equal(payload.result.structured.amount, 300);
 });
 
+test("financeqa snapshot reference provider computes accounting and cashflow coverage templates", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-financeqa-accounting-snapshot-"));
+  const snapshotPath = path.join(dir, "financeqa-snapshot.json");
+  const questionFile = path.join(dir, "question.txt");
+  fs.writeFileSync(questionFile, "老板问法由模板决定", "utf8");
+  fs.writeFileSync(snapshotPath, JSON.stringify({
+    metadata: {
+      generated_at: "2026-07-02T09:10:00+08:00",
+      source_database: "bossagent_app",
+      source_schema: "tenant_uhub"
+    },
+    tables: {
+      fin_bank_statement: [
+        { company: "DefaultCompany", transaction_date: "2026-06-03", credit_amount: 3000, debit_amount: 400, counterparty_name: "客户A", summary: "回款" },
+        { company: "DefaultCompany", transaction_date: "2026-06-20", credit_amount: 500, debit_amount: 800, counterparty_name: "供应商A", summary: "付款" }
+      ],
+      fin_balance_detail: [
+        { company: "DefaultCompany", year: 2026, period: "2026-06", account_code: "1122", account_name: "应收账款", closing_debit: 1200, closing_credit: 100 },
+        { company: "DefaultCompany", year: 2026, period: "2026-06", account_code: "2202", account_name: "应付账款", closing_debit: 50, closing_credit: 950 },
+        { company: "DefaultCompany", year: 2026, period: "2026-06", account_code: "2241", account_name: "其他应付款", closing_debit: 20, closing_credit: 320 }
+      ],
+      fin_journal: [
+        { company: "DefaultCompany", period: "2026-06", voucher_date: "2026-06-10", account_code: "6001", account_name: "主营业务收入", summary: "确认收入", direction: "贷", amount: 2500, debit_amount: 0, credit_amount: 2500 },
+        { company: "DefaultCompany", period: "2026-06", voucher_date: "2026-06-11", account_code: "6401", account_name: "主营业务成本", summary: "结转成本", direction: "借", amount: 700, debit_amount: 700, credit_amount: 0 },
+        { company: "DefaultCompany", period: "2026-06", voucher_date: "2026-06-12", account_code: "6602", account_name: "管理费用", summary: "管理费用", direction: "借", amount: 300, debit_amount: 300, credit_amount: 0 }
+      ],
+      fin_file_mappings: [
+        { table_type: "bank-statement", period: "2026-Q2", file_name: "银行流水Q2.xlsx", updated_at: "2026-07-02T08:00:00+08:00" },
+        { table_type: "balance-detail", period: "2026-Q2", file_name: "余额表Q2.xlsx", updated_at: "2026-07-02T08:10:00+08:00" },
+        { table_type: "journal", period: "2026-Q2", file_name: "序时账Q2.xlsx", updated_at: "2026-07-02T08:20:00+08:00" }
+      ]
+    }
+  }), "utf8");
+
+  const cases = [
+    {
+      template: "finance_accounting_arap_balance",
+      metric: "账上应付端合计",
+      amount: 1200,
+      required: [/应收账款 1100\.00 元/, /应付账款 900\.00 元/, /其他应付款 300\.00 元/, /余额表Q2\.xlsx/]
+    },
+    {
+      template: "finance_bank_cashflow",
+      metric: "净现金流",
+      amount: 2300,
+      required: [/现金流入 3500\.00 元/, /现金流出 1200\.00 元/, /净现金流 2300\.00 元/, /银行流水Q2\.xlsx/]
+    },
+    {
+      template: "finance_journal_profit",
+      metric: "账上净利润",
+      amount: 1500,
+      required: [/账上确认收入 2500\.00 元/, /账上成本及费用 1000\.00 元/, /序时账口径/, /默认未剔税/, /序时账Q2\.xlsx/]
+    },
+    {
+      template: "finance_profit_cash_reconciliation",
+      metric: "现金账上差异",
+      amount: 800,
+      required: [/银行净流入 2300\.00 元/, /账上净利润 1500\.00 元/, /差异金额 800\.00 元/, /口径不同/]
+    }
+  ];
+
+  for (const item of cases) {
+    const result = await spawnNode([
+      "examples/golden/financeqa_snapshot_reference.mjs",
+      "--template", item.template,
+      "--question-file", questionFile,
+      "--snapshot", snapshotPath,
+      "--as-of-date", "2026-07-02"
+    ], {
+      cwd: process.cwd(),
+      env: process.env
+    }, { timeoutMs: 5_000 });
+
+    assert.equal(result.status, 0, `${item.template}: ${result.stderr}`);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.result.source, "financeqa_snapshot_reference");
+    assert.equal(payload.result.structured.metric, item.metric, item.template);
+    assert.equal(payload.result.structured.amount, item.amount, item.template);
+    assert.deepEqual(payload.result.structured.period, { from: "2026-06", to: "2026-06" }, item.template);
+    for (const pattern of item.required) {
+      assert.match(payload.result.final_answer, pattern, item.template);
+    }
+  }
+});
+
+test("financeqa snapshot reference provider filters named customer supplier project and contract templates", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-financeqa-entity-snapshot-"));
+  const snapshotPath = path.join(dir, "financeqa-snapshot.json");
+  const questionFile = path.join(dir, "question.txt");
+  fs.writeFileSync(snapshotPath, JSON.stringify({
+    metadata: {
+      generated_at: "2026-06-26T21:54:44+08:00"
+    },
+    tables: {
+      fin_contracts: [
+        { contract_id: "R1", customer_name: "客户甲", contract_content: "项目Alpha" },
+        { contract_id: "R2", customer_name: "客户乙", contract_content: "项目Other" },
+        { contract_id: "S1", customer_name: "供应商乙", contract_content: "合同Beta" },
+        { contract_id: "S2", customer_name: "供应商丙", contract_content: "合同Other" }
+      ],
+      fin_fund_income: [
+        { contract_id: "R1", customer_name: "客户甲", year_month: "2026-05", settlement_amount: 1000, received_amount: 300, invoice_amount: 800 },
+        { contract_id: "R2", customer_name: "客户乙", year_month: "2026-05", settlement_amount: 500, received_amount: 300, invoice_amount: 500 }
+      ],
+      fin_cost_settlements: [
+        { contract_id: "S1", customer_name: "供应商乙", year_month: "2026-05", settlement_amount: 900, paid_amount: 100, invoice_amount: 700 },
+        { contract_id: "S2", customer_name: "供应商丙", year_month: "2026-05", settlement_amount: 400, paid_amount: 300, invoice_amount: 400 }
+      ]
+    }
+  }), "utf8");
+
+  const cases = [
+    {
+      template: "finance_customer_receivable_unpaid",
+      question: "客户甲 从2025年10月起到上一个完整自然月月底应收未收是多少？",
+      metric: "客户项目应收",
+      amount: 700,
+      entity: "客户甲"
+    },
+    {
+      template: "finance_supplier_payable_unpaid",
+      question: "供应商乙 从2025年10月起到上一个完整自然月月底应付未付是多少？",
+      metric: "供应商项目应付",
+      amount: 800,
+      entity: "供应商乙"
+    },
+    {
+      template: "finance_contract_receivable_unpaid",
+      question: "合同关键词 项目Alpha 从2025年10月起应收未收是多少？",
+      metric: "合同项目应收",
+      amount: 700,
+      entity: "项目Alpha"
+    },
+    {
+      template: "finance_single_project_payable_unpaid",
+      question: "项目 合同Beta 从2025年10月起未付款是多少？",
+      metric: "单项目应付",
+      amount: 800,
+      entity: "合同Beta"
+    }
+  ];
+
+  for (const item of cases) {
+    fs.writeFileSync(questionFile, item.question, "utf8");
+    const result = spawnSync("node", [
+      "examples/golden/financeqa_snapshot_reference.mjs",
+      "--template", item.template,
+      "--question-file", questionFile,
+      "--snapshot", snapshotPath,
+      "--as-of-date", "2026-06-20"
+    ], {
+      cwd: process.cwd(),
+      encoding: "utf8"
+    });
+
+    assert.equal(result.status, 0, `${item.template}: ${result.stderr}`);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.result.structured.metric, item.metric, item.template);
+    assert.equal(payload.result.structured.amount, item.amount, item.template);
+    assert.equal(payload.result.structured.entity.value, item.entity, item.template);
+    assert.match(payload.result.final_answer, new RegExp(item.entity), item.template);
+    assert.doesNotMatch(payload.result.final_answer, /客户乙|供应商丙|Other/, item.template);
+  }
+});
+
 test("financeqa canonical golden runner uses template-derived query instead of raw question", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-financeqa-golden-"));
   const questionFile = path.join(dir, "question.txt");
@@ -1165,6 +1337,8 @@ test("financeqa snapshot export example is read-only and table-whitelisted", () 
   assert.match(contents, /psql/);
   assert.match(contents, /gzip/);
   assert.match(contents, /FINANCEQA_SQLITE_MIRROR_OUTPUT/);
+  assert.match(contents, /FINANCEQA_CASE_VARIABLES_OUTPUT/);
+  assert.match(contents, /financeqa_snapshot_case_variables\.mjs/);
   assert.match(contents, /financeqa_snapshot_to_sqlite\.mjs/);
   assert.match(contents, /fin_contracts/);
   assert.match(contents, /fin_fund_income/);
@@ -1174,9 +1348,57 @@ test("financeqa snapshot export example is read-only and table-whitelisted", () 
   assert.match(contents, /fin_cost_settlement_groups/);
   assert.match(contents, /fin_cost_settlement_group_members/);
   assert.match(contents, /fin_file_mappings/);
-  assert.doesNotMatch(contents, /fin_journal/);
-  assert.doesNotMatch(contents, /fin_bank_statement/);
+  assert.match(contents, /fin_bank_statement/);
+  assert.match(contents, /fin_balance_detail/);
+  assert.match(contents, /fin_balance_sheet/);
+  assert.match(contents, /fin_journal/);
   assert.doesNotMatch(contents, /\bINSERT\b|\bUPDATE\b|\bDELETE\b|\bDROP\b|\bTRUNCATE\b/i);
+});
+
+test("financeqa snapshot case-variable export selects nonzero named entity coverage", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-financeqa-case-vars-"));
+  const snapshotPath = path.join(dir, "financeqa-snapshot.json.gz");
+  const outputPath = path.join(dir, "case-variables.json");
+
+  fs.writeFileSync(snapshotPath, zlib.gzipSync(JSON.stringify({
+    metadata: {
+      generated_at: "2026-06-26T21:54:44+08:00"
+    },
+    tables: {
+      fin_contracts: [
+        { contract_id: "R1", customer_name: "客户甲", contract_content: "项目Alpha" },
+        { contract_id: "R0", customer_name: "客户零", contract_content: "零金额项目" },
+        { contract_id: "S1", customer_name: "供应商乙", contract_content: "合同Beta" },
+        { contract_id: "S0", customer_name: "供应商零", contract_content: "零付款合同" }
+      ],
+      fin_fund_income: [
+        { contract_id: "R1", customer_name: "客户甲", year_month: "2026-05", settlement_amount: 1000, received_amount: 300, invoice_amount: 800 },
+        { contract_id: "R0", customer_name: "客户零", year_month: "2026-05", settlement_amount: 500, received_amount: 500, invoice_amount: 500 }
+      ],
+      fin_cost_settlements: [
+        { contract_id: "S1", customer_name: "供应商乙", year_month: "2026-05", settlement_amount: 900, paid_amount: 100, invoice_amount: 700 },
+        { contract_id: "S0", customer_name: "供应商零", year_month: "2026-05", settlement_amount: 400, paid_amount: 400, invoice_amount: 400 }
+      ]
+    }
+  })));
+
+  const result = spawnSync("node", [
+    "examples/golden/financeqa_snapshot_case_variables.mjs",
+    "--snapshot", snapshotPath,
+    "--output", outputPath
+  ], {
+    cwd: process.cwd(),
+    encoding: "utf8"
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /wrote FinanceQA case variables/);
+  const payload = JSON.parse(fs.readFileSync(outputPath, "utf8"));
+  assert.deepEqual(payload.templates.finance_customer_receivable_unpaid.customer_name, ["客户甲"]);
+  assert.deepEqual(payload.templates.finance_supplier_payable_unpaid.supplier_name, ["供应商乙"]);
+  assert.deepEqual(payload.templates.finance_contract_receivable_unpaid.contract_name, ["项目Alpha"]);
+  assert.deepEqual(payload.templates.finance_single_project_payable_unpaid.project_name, ["合同Beta"]);
+  assert.doesNotMatch(JSON.stringify(payload), /客户零|供应商零|零金额/);
 });
 
 test("financeqa snapshot to sqlite mirror builds actual-service data from the same snapshot", () => {
@@ -1245,6 +1467,57 @@ test("financeqa snapshot to sqlite mirror builds actual-service data from the sa
           updated_at: "2026-06-26T20:29:51+08:00"
         }
       ],
+      fin_bank_statement: [
+        {
+          company: "DefaultCompany",
+          transaction_date: "2026-05-02",
+          credit_amount: 2000,
+          debit_amount: 300,
+          counterparty_name: "客户A",
+          summary: "回款"
+        }
+      ],
+      fin_balance_detail: [
+        {
+          company: "DefaultCompany",
+          year: 2026,
+          period: "2026-05",
+          account_code: "1122",
+          account_name: "应收账款",
+          opening_debit: 1000,
+          opening_credit: 0,
+          current_debit: 200,
+          current_credit: 50,
+          closing_debit: 1150,
+          closing_credit: 0
+        }
+      ],
+      fin_balance_sheet: [
+        {
+          company: "DefaultCompany",
+          period: "2026-05",
+          account_code: "1002",
+          account_name: "银行存款",
+          opening_balance: 1000,
+          closing_balance: 2700
+        }
+      ],
+      fin_journal: [
+        {
+          company: "DefaultCompany",
+          period: "2026-05",
+          voucher_date: "2026-05-31",
+          voucher_no: "记-001",
+          account_code: "6001",
+          account_name: "主营业务收入",
+          summary: "确认收入",
+          direction: "贷",
+          amount: 1800,
+          debit_amount: 0,
+          credit_amount: 1800,
+          counterparty: "客户A"
+        }
+      ],
       fin_file_mappings: [
         {
           id: 3,
@@ -1284,6 +1557,9 @@ test("financeqa snapshot to sqlite mirror builds actual-service data from the sa
       (SELECT COUNT(*) FROM fin_contracts) AS contracts,
       (SELECT ROUND(SUM(settlement_amount), 2) FROM fin_fund_income) AS revenue,
       (SELECT ROUND(SUM(invoice_amount - paid_amount - COALESCE(invoice_open_offset_amount, 0)), 2) FROM fin_cost_settlements) AS invoice_open,
+      (SELECT ROUND(SUM(credit_amount - debit_amount), 2) FROM bank_statement) AS bank_net,
+      (SELECT ROUND(SUM(closing_debit - closing_credit), 2) FROM balance_detail) AS ar_balance,
+      (SELECT ROUND(SUM(credit_amount), 2) FROM journal WHERE account_code LIKE '6001%') AS journal_revenue,
       (SELECT GROUP_CONCAT(file_name, '|') FROM fin_file_mappings) AS files;
     `
   ], { encoding: "utf8" });
@@ -1294,6 +1570,9 @@ test("financeqa snapshot to sqlite mirror builds actual-service data from the sa
     contracts: 1,
     revenue: 1851758.61,
     invoice_open: 500,
+    bank_net: 1700,
+    ar_balance: 1150,
+    journal_revenue: 1800,
     files: "优集收入、成本计算表 - 上传.xlsx"
   }]);
 
@@ -1484,3 +1763,16 @@ test("agent cleanup dispatcher requires explicitly configured kinds", () => {
     );
   }
 });
+
+function withFinanceqaEntityVariables(config: ReturnType<typeof loadConfig>): ReturnType<typeof loadConfig> {
+  return {
+    ...config,
+    caseVariables: {
+      ...(config.caseVariables ?? {}),
+      finance_customer_receivable_unpaid: { customer_name: ["客户甲"] },
+      finance_supplier_payable_unpaid: { supplier_name: ["供应商乙"] },
+      finance_contract_receivable_unpaid: { contract_name: ["项目Alpha"] },
+      finance_single_project_payable_unpaid: { project_name: ["合同Beta"] }
+    }
+  };
+}

@@ -29,3 +29,17 @@ test("deriveReferenceRules converts ten-thousand yuan amounts", () => {
 
   assert.deepEqual(rules.amounts, [{ label: "项目应收", value: 2185200 }]);
 });
+
+test("deriveReferenceRules extracts multiple labels and negative amounts", () => {
+  const rules = deriveReferenceRules("2026-06 现金流入 100.00 元，现金流出 300.00 元，净现金流 -200.00 元。", {
+    amounts: {
+      labels: ["现金流入", "现金流出", "净现金流"]
+    }
+  });
+
+  assert.deepEqual(rules.amounts, [
+    { label: "现金流入", value: 100 },
+    { label: "现金流出", value: 300 },
+    { label: "净现金流", value: -200 }
+  ]);
+});

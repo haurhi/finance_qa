@@ -21,12 +21,16 @@ interface CandidateCase {
 }
 
 export function generateCases(
-  config: { targets: Record<string, CaseTargetConfig>; templates?: Record<string, CaseTemplateConfig> },
+  config: {
+    targets: Record<string, CaseTargetConfig>;
+    templates?: Record<string, CaseTemplateConfig>;
+    caseVariables?: Record<string, Record<string, string[]>>;
+  },
   options: GenerateOptions
 ): PatrolCase[] {
   const cases: PatrolCase[] = [];
   for (const [targetName, target] of Object.entries(config.targets)) {
-    cases.push(...generateTargetCases(targetName, target, config.templates ?? {}, options));
+    cases.push(...generateTargetCases(targetName, target, config.templates ?? {}, config.caseVariables ?? {}, options));
   }
   return cases;
 }
@@ -35,6 +39,7 @@ function generateTargetCases(
   targetName: string,
   target: CaseTargetConfig,
   templateCatalog: Record<string, CaseTemplateConfig>,
+  caseVariables: Record<string, Record<string, string[]>>,
   options: GenerateOptions
 ): PatrolCase[] {
   const suite = target.suites?.[options.suite];
@@ -45,7 +50,7 @@ function generateTargetCases(
     if (!def) {
       throw new Error(`unknown case template: ${templateName}`);
     }
-    return expandTemplate(templateName, def, anchor);
+    return expandTemplate(templateName, def, anchor, caseVariables[templateName]);
   });
   const selected = selectCandidates(candidates, suite?.caseCount, `${options.seed}:${targetName}:${options.suite}`);
   return selected.map((candidate) => {
@@ -65,10 +70,11 @@ function generateTargetCases(
 function expandTemplate(
   templateName: string,
   def: CaseTemplateConfig,
-  anchor: { customers?: Array<{ name?: string }> }
+  anchor: { customers?: Array<{ name?: string }> },
+  dynamicVariables: Record<string, string[]> | undefined
 ): CandidateCase[] {
   const bases = questionBases(def);
-  const variables = variableCombinations(def.variables ?? {});
+  const variables = variableCombinations(mergeVariables(def.variables, dynamicVariables));
   const candidates: CandidateCase[] = [];
   for (const base of bases) {
     for (const variableSet of variables) {
@@ -78,7 +84,7 @@ function expandTemplate(
           templateName,
           variantIndex: candidates.length,
           question: rendered,
-          questionAnchors: def.questionAnchors,
+          questionAnchors: withVariableAnchors(def.questionAnchors, base, variableSet, dynamicVariables),
           scoring: def.scoring ?? {}
         });
       }
@@ -117,9 +123,43 @@ function applyTemplate(
   if (!customerName && question.includes("{{customer.name}}")) {
     return "";
   }
+  const requiredVariables = [...question.matchAll(/\{\{([a-zA-Z0-9_]+)\}\}/g)].map((match) => match[1]!);
+  if (requiredVariables.some((key) => !variables[key])) {
+    return "";
+  }
   return question
     .replace(/\{\{customer\.name\}\}/g, customerName ?? "")
-    .replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_match, key: string) => variables[key] ?? "");
+    .replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_match, key: string) => variables[key] ?? "")
+    .trim();
+}
+
+function mergeVariables(
+  staticVariables: Record<string, string[]> | undefined,
+  dynamicVariables: Record<string, string[]> | undefined
+): Record<string, string[]> {
+  const merged: Record<string, string[]> = {};
+  for (const source of [staticVariables, dynamicVariables]) {
+    for (const [key, values] of Object.entries(source ?? {})) {
+      merged[key] = unique([...(merged[key] ?? []), ...values]);
+    }
+  }
+  return merged;
+}
+
+function withVariableAnchors(
+  anchors: string[][] | undefined,
+  baseQuestion: string,
+  variables: Record<string, string>,
+  dynamicVariables: Record<string, string[]> | undefined
+): string[][] | undefined {
+  const out = [...(anchors ?? [])];
+  const dynamicKeys = new Set(Object.keys(dynamicVariables ?? {}));
+  for (const [key, value] of Object.entries(variables)) {
+    if (value && dynamicKeys.has(key) && baseQuestion.includes(`{{${key}}}`)) {
+      out.push([value]);
+    }
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 function variableCombinations(variables: Record<string, string[]>): Array<Record<string, string>> {
@@ -131,6 +171,10 @@ function variableCombinations(variables: Record<string, string[]>): Array<Record
     }
     return acc.flatMap((item) => values.map((value) => ({ ...item, [key]: value })));
   }, [{}]);
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function selectCandidates(candidates: CandidateCase[], caseCount: number | undefined, seed: string): CandidateCase[] {

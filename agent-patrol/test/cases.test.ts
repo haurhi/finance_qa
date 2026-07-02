@@ -98,3 +98,44 @@ test("generateCases samples template variable combinations deterministically", (
   assert.equal(first.some((item) => item.question.includes("{{")), false);
   assert.notDeepEqual(nextDay.map((item) => item.question), first.map((item) => item.question));
 });
+
+test("generateCases expands per-template dynamic case variables and keeps them as anchors", () => {
+  const config = {
+    templates: {
+      customer_receivable: {
+        questions: [
+          "{{customer_name}} {{period}}应收未收是多少？",
+          "按项目口径看，{{customer_name}} {{period}}还有多少没收回来？"
+        ],
+        variables: {
+          period: ["从2025年10月起到上一个完整自然月月底"]
+        },
+        questionAnchors: [["应收未收", "没收回来"]]
+      }
+    },
+    caseVariables: {
+      customer_receivable: {
+        customer_name: ["客户甲", "客户乙"]
+      }
+    },
+    targets: {
+      finance: {
+        runner: { type: "openclaw_agent_cli" },
+        oracle: { type: "financeqa_readonly" },
+        suites: { smoke: { templates: ["customer_receivable"], caseCount: 2 } }
+      }
+    }
+  };
+
+  const cases = generateCases(config, { suite: "smoke", seed: "entity-seed" });
+
+  assert.equal(cases.length, 2);
+  assert.equal(cases.some((item) => item.question.includes("客户甲")), true);
+  assert.equal(cases.some((item) => item.question.includes("客户乙")), true);
+  assert.equal(cases.some((item) => item.question.includes("{{")), false);
+  assert.deepEqual(
+    cases.map((item) => item.questionAnchors?.at(-1)),
+    cases.map((item) => [item.question.match(/客户[甲乙]/)?.[0]])
+  );
+  assert.equal(cases.some((item) => item.questionAnchors?.some((group) => group.includes("从2025年10月起到上一个完整自然月月底"))), false);
+});

@@ -59,6 +59,8 @@ export interface PatrolConfig {
   version?: number;
   timezone?: string;
   writeToolPatterns?: string[];
+  caseVariablesFile?: string;
+  caseVariables?: Record<string, Record<string, string[]>>;
   report: {
     minAccuracy: number;
     outputDir?: string;

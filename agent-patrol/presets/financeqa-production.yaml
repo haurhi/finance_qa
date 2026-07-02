@@ -1,5 +1,6 @@
 version: 1
 timezone: Asia/Shanghai
+caseVariablesFile: ${FINANCEQA_CASE_VARIABLES_FILE}
 report:
   minAccuracy: 0.9
   outputDir: tmp/patrol-financeqa
@@ -151,6 +152,191 @@ templates:
         - ["项目成本", "项目口径", "项目应付"]
         - ["未付款", "应付未付", "项目应付"]
 
+  finance_customer_receivable_unpaid:
+    questions:
+      - "{{customer_name}}，{{period}}应收未收是多少？"
+      - "项目口径看，{{customer_name}}这个客户{{period}}还有多少没收回来？"
+      - "客户：{{customer_name}}，{{period}}项目应收未收合计多少？"
+    questionAnchors:
+      - ["客户", "指定客户"]
+      - ["应收未收", "没收回来", "项目应收"]
+    variables:
+      period:
+        - "从2025年10月起到上一个完整自然月月底"
+        - "2025年10月至上一个完整自然月月底"
+    scoring:
+      amountLabelGroups:
+        - ["客户项目应收", "项目应收", "应收未收", "未回款"]
+      referenceChecks:
+        amounts:
+          labels: ["客户项目应收", "项目应收", "应收未收"]
+        periods: true
+        sources: true
+      mustContainAny:
+        - ["客户项目应收", "项目应收", "应收未收"]
+        - ["项目口径", "客户", "指定客户"]
+
+  finance_supplier_payable_unpaid:
+    questions:
+      - "{{supplier_name}}，{{period}}应付未付是多少？"
+      - "项目成本口径看，{{supplier_name}}这个供应商{{period}}还有多少未付款？"
+      - "供应商：{{supplier_name}}，{{period}}项目应付未付合计多少？"
+    questionAnchors:
+      - ["供应商", "指定供应商"]
+      - ["应付未付", "未付款", "项目应付"]
+    variables:
+      period:
+        - "从2025年10月起到上一个完整自然月月底"
+        - "2025年10月至上一个完整自然月月底"
+    scoring:
+      amountLabelGroups:
+        - ["供应商项目应付", "项目应付", "应付未付", "未付款"]
+      referenceChecks:
+        amounts:
+          labels: ["供应商项目应付", "项目应付", "应付未付"]
+        periods: true
+        sources: true
+      mustContainAny:
+        - ["供应商项目应付", "项目应付", "应付未付"]
+        - ["项目成本", "供应商", "指定供应商"]
+
+  finance_contract_receivable_unpaid:
+    questions:
+      - "合同关键词{{contract_name}}，{{period}}应收未收是多少？"
+      - "项目/合同：{{contract_name}}，{{period}}还有多少没收回来？"
+      - "按合同{{contract_name}}看，{{period}}项目应收未收合计多少？"
+    questionAnchors:
+      - ["合同", "项目/合同", "合同关键词"]
+      - ["应收未收", "没收回来", "项目应收"]
+    variables:
+      period:
+        - "从2025年10月起到上一个完整自然月月底"
+        - "2025年10月至上一个完整自然月月底"
+    scoring:
+      amountLabelGroups:
+        - ["合同项目应收", "项目应收", "应收未收", "未回款"]
+      referenceChecks:
+        amounts:
+          labels: ["合同项目应收", "项目应收", "应收未收"]
+        periods: true
+        sources: true
+      mustContainAny:
+        - ["合同项目应收", "项目应收", "应收未收"]
+        - ["合同", "项目"]
+
+  finance_single_project_payable_unpaid:
+    questions:
+      - "项目：{{project_name}}，{{period}}未付款是多少？"
+      - "项目/合同：{{project_name}}，{{period}}应付未付多少？"
+      - "按项目成本口径看，{{project_name}}，{{period}}还有多少没付？"
+    questionAnchors:
+      - ["项目", "项目/合同"]
+      - ["未付款", "应付未付", "没付"]
+    variables:
+      period:
+        - "从2025年10月起到上一个完整自然月月底"
+        - "2025年10月至上一个完整自然月月底"
+    scoring:
+      amountLabelGroups:
+        - ["单项目应付", "项目应付", "应付未付", "未付款"]
+      referenceChecks:
+        amounts:
+          labels: ["单项目应付", "项目应付", "应付未付"]
+        periods: true
+        sources: true
+      mustContainAny:
+        - ["单项目应付", "项目应付", "应付未付"]
+        - ["项目成本", "项目", "项目口径"]
+
+  finance_accounting_arap_balance:
+    questions:
+      - "账上看，最新完整月份应收账款、应付账款和其他应付款分别是多少？"
+      - "官方余额表里，最新完整月份应收应付挂账情况怎么样？"
+      - "按余额表口径，看一下最新完整月份账上应收应付。"
+    questionAnchors:
+      - ["账上", "官方余额表", "余额表"]
+      - ["应收账款", "应付账款", "其他应付款", "应收应付"]
+    scoring:
+      amountLabelGroups:
+        - ["账上应付端合计", "应付端合计"]
+        - ["应收账款"]
+        - ["应付账款"]
+        - ["其他应付款"]
+      referenceChecks:
+        amounts:
+          labels: ["账上应付端合计", "应收账款", "应付账款", "其他应付款"]
+        periods: true
+        sources: true
+      mustContainAny:
+        - ["账上", "官方余额表", "余额表"]
+        - ["应收账款", "应付账款", "其他应付款"]
+
+  finance_bank_cashflow:
+    questions:
+      - "银行流水看，最新完整月份现金流入、流出和净流入是多少？"
+      - "按银行流水口径，最近完整月份现金流入多少、现金流出多少？"
+      - "银行卡上看，最新完整月份净现金流是多少？"
+    questionAnchors:
+      - ["银行流水", "银行卡上", "银行"]
+      - ["现金流入", "现金流出", "净现金流", "净流入"]
+    scoring:
+      amountLabelGroups:
+        - ["净现金流", "净流入"]
+        - ["现金流入"]
+        - ["现金流出"]
+      referenceChecks:
+        amounts:
+          labels: ["净现金流", "现金流入", "现金流出"]
+        periods: true
+        sources: true
+      mustContainAny:
+        - ["银行流水", "银行卡上", "银行"]
+        - ["现金流入", "现金流出", "净现金流", "净流入"]
+
+  finance_journal_profit:
+    questions:
+      - "序时账看，最新完整月份账上收入、成本费用和净利润是多少？"
+      - "账上看最近完整月份净利润是多少？"
+      - "按序时账口径，最新完整月份账上净利润情况怎么样？"
+    questionAnchors:
+      - ["序时账", "账上"]
+      - ["账上净利润", "净利润", "收入", "成本费用"]
+    scoring:
+      amountLabelGroups:
+        - ["账上净利润", "净利润"]
+        - ["账上确认收入", "收入"]
+        - ["账上成本及费用", "成本费用"]
+      referenceChecks:
+        amounts:
+          labels: ["账上净利润", "账上确认收入", "账上成本及费用"]
+        periods: true
+        sources: true
+      mustContainAny:
+        - ["序时账口径", "序时账", "账上"]
+        - ["默认未剔税", "含税", "凭证入账金额"]
+
+  finance_profit_cash_reconciliation:
+    questions:
+      - "为什么最新完整月份银行卡上看和账上看的利润不一样？差异是多少？"
+      - "最新完整月份银行净流入和账上净利润差多少？"
+      - "对比一下最近完整月份账上利润和银行流水净流入。"
+    questionAnchors:
+      - ["银行卡上", "银行净流入", "银行流水", "净流入"]
+      - ["账上", "账上净利润", "利润", "差异"]
+    scoring:
+      amountLabelGroups:
+        - ["差异金额", "差异"]
+        - ["银行净流入", "净流入"]
+        - ["账上净利润", "净利润"]
+      referenceChecks:
+        amounts:
+          labels: ["差异金额", "银行净流入", "账上净利润"]
+        periods: true
+        sources: true
+      mustContainAny:
+        - ["差异金额", "差异"]
+        - ["口径不同", "银行流水", "账上"]
+
 targets:
   finance_qa:
     kind: openclaw_finance_agent
@@ -192,7 +378,7 @@ targets:
           - finance_project_invoiced_payable_unpaid
           - finance_unpaid_projects
       daily:
-        caseCount: 8
+        caseCount: 14
         templates:
           - finance_latest_month_revenue
           - finance_project_receivable_unpaid
@@ -200,3 +386,11 @@ targets:
           - finance_project_payable_unpaid
           - finance_project_invoiced_payable_unpaid
           - finance_unpaid_projects
+          - finance_customer_receivable_unpaid
+          - finance_supplier_payable_unpaid
+          - finance_contract_receivable_unpaid
+          - finance_single_project_payable_unpaid
+          - finance_accounting_arap_balance
+          - finance_bank_cashflow
+          - finance_journal_profit
+          - finance_profit_cash_reconciliation

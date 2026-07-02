@@ -77,6 +77,54 @@ targets:
   assert.equal(config.targets.finance?.oracle.mcpUrl, "${FINANCE_URL}");
 });
 
+test("loadConfig reads optional case variables from an external JSON file", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-config-vars-"));
+  const variablesPath = path.join(dir, "case-variables.json");
+  const configPath = path.join(dir, "patrol.yaml");
+  fs.writeFileSync(variablesPath, JSON.stringify({
+    templates: {
+      finance_customer_receivable_unpaid: {
+        customer_name: ["客户A", "客户B"]
+      }
+    }
+  }), "utf8");
+  fs.writeFileSync(configPath, `
+caseVariablesFile: "\${CASE_VARIABLES_FILE}"
+targets:
+  finance:
+    runner:
+      type: openclaw_agent_cli
+    oracle:
+      type: financeqa_readonly
+      mcpUrl: http://127.0.0.1/mcp
+      allowedTools: [finance-query]
+`, "utf8");
+
+  const config = loadConfig(configPath, { CASE_VARIABLES_FILE: variablesPath });
+
+  assert.deepEqual(config.caseVariables?.finance_customer_receivable_unpaid?.customer_name, ["客户A", "客户B"]);
+});
+
+test("loadConfig ignores unresolved optional case variables file placeholders", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-config-vars-"));
+  const configPath = path.join(dir, "patrol.yaml");
+  fs.writeFileSync(configPath, `
+caseVariablesFile: "\${CASE_VARIABLES_FILE}"
+targets:
+  finance:
+    runner:
+      type: openclaw_agent_cli
+    oracle:
+      type: financeqa_readonly
+      mcpUrl: http://127.0.0.1/mcp
+      allowedTools: [finance-query]
+`, "utf8");
+
+  const config = loadConfig(configPath, {});
+
+  assert.equal(config.caseVariables, undefined);
+});
+
 test("production FinanceQA preset requires generated questions and golden reference", () => {
   const config = loadConfig("presets/financeqa-production.yaml", {
     OPENCLAW_AGENT_CMD: "node examples/runners/openclaw_local_runner.mjs --question-file {questionFile} --session-id {sessionId}",
@@ -90,4 +138,17 @@ test("production FinanceQA preset requires generated questions and golden refere
   assert.match(target.questionGenerator?.command ?? "", /llm_command_rewriter/);
   assert.equal(target.goldenReference?.type, "command");
   assert.match(target.goldenReference?.command ?? "", /financeqa_snapshot_reference/);
+  assert.deepEqual(target.suites?.daily?.templates?.slice(-4), [
+    "finance_accounting_arap_balance",
+    "finance_bank_cashflow",
+    "finance_journal_profit",
+    "finance_profit_cash_reconciliation"
+  ]);
+  assert.deepEqual(target.suites?.daily?.templates?.slice(6, 10), [
+    "finance_customer_receivable_unpaid",
+    "finance_supplier_payable_unpaid",
+    "finance_contract_receivable_unpaid",
+    "finance_single_project_payable_unpaid"
+  ]);
+  assert.equal(target.suites?.daily?.caseCount, 14);
 });

@@ -202,6 +202,49 @@ function buildSql(snapshot, tables) {
       "created_at",
       "updated_at"
     ], tables.fin_file_mappings),
+    ...insertRows("bank_statement", [
+      "company",
+      "transaction_date",
+      "credit_amount",
+      "debit_amount",
+      "counterparty_name",
+      "summary"
+    ], tables.fin_bank_statement),
+    ...insertRows("journal", [
+      "company",
+      "period",
+      "voucher_date",
+      "voucher_no",
+      "account_code",
+      "account_name",
+      "summary",
+      "direction",
+      "amount",
+      "debit_amount",
+      "credit_amount",
+      "counterparty"
+    ], tables.fin_journal),
+    ...insertRows("balance_sheet", [
+      "company",
+      "period",
+      "account_code",
+      "account_name",
+      "opening_balance",
+      "closing_balance"
+    ], tables.fin_balance_sheet),
+    ...insertRows("balance_detail", [
+      "company",
+      "year",
+      "period",
+      "account_code",
+      "account_name",
+      "opening_debit",
+      "opening_credit",
+      "current_debit",
+      "current_credit",
+      "closing_debit",
+      "closing_credit"
+    ], tables.fin_balance_detail),
     ...insertRows("agent_patrol_snapshot_metadata", [
       "generated_at",
       "source_database",
