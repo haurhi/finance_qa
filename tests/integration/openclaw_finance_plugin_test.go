@@ -131,8 +131,8 @@ func TestOpenClawFinancePluginMetadataUsesCurrentMajorVersion(t *testing.T) {
 		if err := json.Unmarshal(raw, &doc); err != nil {
 			t.Fatalf("parse plugin metadata %s: %v", path, err)
 		}
-		if got := doc["version"]; got != "2.2.26" {
-			t.Fatalf("%s version = %v, want 2.2.26", path, got)
+		if got := doc["version"]; got != "2.2.27" {
+			t.Fatalf("%s version = %v, want 2.2.27", path, got)
 		}
 		if strings.HasSuffix(path, "package.json") {
 			packageDoc = doc

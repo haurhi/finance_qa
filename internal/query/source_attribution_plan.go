@@ -57,6 +57,8 @@ func resolveSourceAttributionTables(spec QuerySpec, data map[string]any) []strin
 			return []string{"fin_journal", "fin_balance_detail"}
 		}
 		return []string{"fin_balance_detail"}
+	case QueryFamilyReconciliation:
+		return sourceTablesForReconciliation(anyToString(data["book_source"]))
 	case QueryFamilyCounterparty:
 		return sourceTablesForCounterparty(spec.NormalizedQuestion)
 	default:
@@ -108,6 +110,11 @@ func resolvePrimaryAndSupportingBaseTables(spec QuerySpec, data map[string]any) 
 			return []string{"fin_journal"}, []string{"fin_balance_detail"}
 		}
 		return []string{"fin_balance_detail"}, nil
+	case QueryFamilyReconciliation:
+		if strings.Contains(strings.TrimSpace(anyToString(data["book_source"])), "journal") {
+			return []string{"fin_journal", "fin_bank_statement"}, nil
+		}
+		return []string{"fin_income_statement", "fin_bank_statement"}, []string{"fin_journal"}
 	case QueryFamilySupplierPayments:
 		return []string{"fin_bank_statement"}, nil
 	case QueryFamilyHRCost:

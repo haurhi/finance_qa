@@ -127,6 +127,14 @@ WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')
 		return monthlyBookView{}, "empty_month", nil
 	}
 
+	book, _, err := e.monthlyJournalBookSummary(year, month)
+	return book, "journal_fallback", err
+}
+
+func (e *Engine) monthlyJournalBookSummary(year, month int) (monthlyBookView, string, error) {
+	if !e.hasJournalActivityForMonth(year, month) {
+		return monthlyBookView{}, "empty_month", nil
+	}
 	monthly, err := e.calc.ComputeMonthlyFromJournal(e.Company, year, month)
 	if err != nil {
 		return monthlyBookView{}, "", err
@@ -149,7 +157,7 @@ WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')
 		Profit:              is.TotalProfit,
 		NetProfit:           is.NetProfit,
 		IncomeTax:           is.IncomeTax,
-	}, "journal_fallback", nil
+	}, "journal", nil
 }
 
 func matchIncomeStatementItem(item string, patterns []string) bool {

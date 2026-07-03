@@ -9,33 +9,75 @@ func (e *Engine) collectSourceTables(spec QuerySpec, data map[string]any) []stri
 func contractSourceTablesFromData(data map[string]any) []string {
 	role := strings.TrimSpace(anyToString(data["role"]))
 	askedTopic := strings.TrimSpace(anyToString(data["asked_topic"]))
+	return contractSourceTablesForRoleAndTopicWithConfig(role, askedTopic, getRuleConfig())
+}
+
+func contractSourceTablesForRoleAndTopic(role, askedTopic string) []string {
+	return contractSourceTablesForRoleAndTopicWithConfig(role, askedTopic, getRuleConfig())
+}
+
+func contractSourceTablesForRoleAndTopicWithConfig(role, askedTopic string, cfg RuleConfig) []string {
+	configured := cfg.ContractSourceTables(role)
+	allowedBases := contractSourceBaseTablesForRoleAndTopic(role, askedTopic)
+	if len(allowedBases) == 0 {
+		return configured
+	}
+	filtered := filterSourceTablesByBase(configured, allowedBases)
+	if len(filtered) > 0 {
+		return filtered
+	}
+	return allowedBases
+}
+
+func contractSourceBaseTablesForRoleAndTopic(role, askedTopic string) []string {
 	switch askedTopic {
 	case "content":
 		return []string{"fin_contracts"}
 	case "revenue", "receipts":
-		return []string{"fin_contracts", "fin_fund_income"}
-	case "cost", "payments":
+		return []string{"fin_contracts", "fin_fund_income", "fin_fund_income_groups", "fin_fund_income_group_members"}
+	case "cost", "payments", "payable", "invoice":
 		if role == "supplier_contract" || role == "mixed_contract" {
-			return []string{"fin_contracts", "fin_cost_settlements", "fin_bank_statement"}
+			return []string{"fin_contracts", "fin_cost_settlements", "fin_cost_settlement_groups", "fin_cost_settlement_group_members", "fin_bank_statement"}
 		}
-		return []string{"fin_contracts", "fin_cost_settlements"}
+		return []string{"fin_contracts", "fin_cost_settlements", "fin_cost_settlement_groups", "fin_cost_settlement_group_members"}
 	case "profit":
 		if role == "mixed_contract" {
-			return []string{"fin_contracts", "fin_fund_income", "fin_cost_settlements", "fin_bank_statement"}
+			return []string{
+				"fin_contracts",
+				"fin_fund_income", "fin_fund_income_groups", "fin_fund_income_group_members",
+				"fin_cost_settlements", "fin_cost_settlement_groups", "fin_cost_settlement_group_members",
+				"fin_bank_statement",
+			}
 		}
 		if role == "supplier_contract" {
-			return []string{"fin_contracts", "fin_cost_settlements", "fin_bank_statement"}
+			return []string{"fin_contracts", "fin_cost_settlements", "fin_cost_settlement_groups", "fin_cost_settlement_group_members", "fin_bank_statement"}
 		}
-		return []string{"fin_contracts", "fin_fund_income"}
+		return []string{"fin_contracts", "fin_fund_income", "fin_fund_income_groups", "fin_fund_income_group_members"}
 	default:
-		if role == "supplier_contract" {
-			return []string{"fin_contracts", "fin_cost_settlements", "fin_bank_statement"}
-		}
-		if role == "mixed_contract" {
-			return []string{"fin_contracts", "fin_fund_income", "fin_cost_settlements", "fin_bank_statement"}
-		}
-		return []string{"fin_contracts", "fin_fund_income"}
+		return nil
 	}
+}
+
+func filterSourceTablesByBase(tables, allowedBases []string) []string {
+	if len(tables) == 0 || len(allowedBases) == 0 {
+		return nil
+	}
+	allowed := map[string]struct{}{}
+	for _, tableName := range allowedBases {
+		base := strings.TrimSpace(baseSourceTableName(tableName))
+		if base == "" {
+			continue
+		}
+		allowed[base] = struct{}{}
+	}
+	out := make([]string, 0, len(tables))
+	for _, tableName := range tables {
+		base := strings.TrimSpace(baseSourceTableName(tableName))
+		if _, ok := allowed[base]; ok {
+			out = append(out, tableName)
+		}
+	}
+	return dedupeSourceTables(out...)
 }
 
 func contractAggregateTablesForMetric(metric string) []string {

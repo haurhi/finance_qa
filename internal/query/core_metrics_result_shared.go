@@ -2,16 +2,19 @@ package query
 
 import "fmt"
 
-func buildCoreMetricSharedResultFields(bookSource string, book monthlyBookView, displayedBookProfit float64, cashFlowSummary, bridgeMap map[string]any) map[string]any {
-	return map[string]any{
-		"source_tables":      sourceTablesForCoreMetric(bookSource, true),
+func buildCoreMetricSharedResultFields(bookSource string, book monthlyBookView, displayedBookProfit float64, cashFlowSummary, bridgeMap map[string]any, includeCash bool) map[string]any {
+	data := map[string]any{
+		"source_tables":      sourceTablesForCoreMetric(bookSource, includeCash),
 		"profit_cash_bridge": bridgeMap,
-		"现金流入":               cashFlowSummary["现金流入"],
-		"现金流出":               cashFlowSummary["现金流出"],
-		"净现金流":               cashFlowSummary["净现金流"],
 		"财务做账口径(看利润)":        buildCoreMetricBookView(book, displayedBookProfit),
-		"cash_flow":          cashFlowSummary,
 	}
+	if includeCash {
+		data["现金流入"] = cashFlowSummary["现金流入"]
+		data["现金流出"] = cashFlowSummary["现金流出"]
+		data["净现金流"] = cashFlowSummary["净现金流"]
+		data["cash_flow"] = cashFlowSummary
+	}
+	return data
 }
 
 func buildCoreMetricMonthlyPayload(year, month int, bookSource string, book monthlyBookView) map[string]any {

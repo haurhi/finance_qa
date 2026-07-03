@@ -9,6 +9,7 @@ const (
 	executionStageDirectCashOnHandBalance    executionStage = "direct_cash_on_hand_balance"
 	executionStageDirectBankCashFlow         executionStage = "direct_bank_cash_flow"
 	executionStageDirectPreciseBalance       executionStage = "direct_precise_balance"
+	executionStageDirectAccrualCoreMetric    executionStage = "direct_accrual_core_metric"
 	executionStageDirectContractDimension    executionStage = "direct_contract_dimension"
 	executionStageDirectReconciliation       executionStage = "direct_reconciliation"
 	executionStageDirectCoreMetricRange      executionStage = "direct_core_metric_range"

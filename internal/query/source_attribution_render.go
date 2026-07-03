@@ -34,14 +34,15 @@ func (e *Engine) annotateSourceAttribution(spec QuerySpec, result Result) Result
 		}
 	}
 
-	primaryTables, supportingTables := choosePrimaryAndSupportingTables(spec, result.Data, collected)
-	partitions := e.collectSourcePartitions(spec, result.Data, collected)
+	attributionSpec := sourceAttributionSpecFromResultData(spec, result.Data)
+	primaryTables, supportingTables := choosePrimaryAndSupportingTables(attributionSpec, result.Data, collected)
+	partitions := e.collectSourcePartitions(attributionSpec, result.Data, collected)
 	primaryPartitions := filterSourcePartitionsByTable(partitions, primaryTables)
 	supportingPartitions := filterSourcePartitionsByTable(partitions, supportingTables)
-	primaryDocs := e.sourceDisplaysForTables(spec, primaryTables, metadata, primaryPartitions)
-	supportingDocs := e.sourceDisplaysForTables(spec, supportingTables, metadata, supportingPartitions)
+	primaryDocs := e.sourceDisplaysForTables(attributionSpec, primaryTables, metadata, primaryPartitions)
+	supportingDocs := e.sourceDisplaysForTables(attributionSpec, supportingTables, metadata, supportingPartitions)
 	sourceNote := buildSourceNote(primaryDocs, supportingDocs)
-	sourceUpdateNote := e.buildSourceUpdateNote(spec, collected, metadata)
+	sourceUpdateNote := e.buildSourceUpdateNote(attributionSpec, collected, metadata)
 	if sourceNote == "" {
 		sourceNote = "来源：未记录"
 	}
@@ -52,7 +53,7 @@ func (e *Engine) annotateSourceAttribution(spec QuerySpec, result Result) Result
 	result.Data["source_tables"] = collected
 	result.Data["primary_source_tables"] = primaryTables
 	result.Data["source_documents"] = primaryDocs
-	if sourceVersionIDs := e.sourceVersionIDsForTables(spec, collected); len(sourceVersionIDs) > 0 {
+	if sourceVersionIDs := e.sourceVersionIDsForTables(attributionSpec, collected); len(sourceVersionIDs) > 0 {
 		result.Data["source_version_ids"] = sourceVersionIDs
 	}
 	if len(supportingDocs) > 0 {
@@ -80,6 +81,39 @@ func (e *Engine) annotateSourceAttribution(spec QuerySpec, result Result) Result
 		result.Message = strings.TrimSpace(result.Message) + "\n" + sourceUpdateNote
 	}
 	return result
+}
+
+func sourceAttributionSpecFromResultData(spec QuerySpec, data map[string]any) QuerySpec {
+	if data == nil {
+		return spec
+	}
+	out := spec
+	from := strings.TrimSpace(anyToString(data["period_from"]))
+	to := strings.TrimSpace(anyToString(data["period_to"]))
+	if from == "" && to == "" {
+		period := strings.TrimSpace(anyToString(data["period"]))
+		if strings.Contains(period, "~") {
+			parts := strings.SplitN(period, "~", 2)
+			from = strings.TrimSpace(parts[0])
+			to = strings.TrimSpace(parts[1])
+		} else if period != "" && len(period) >= len("2006-01") {
+			from = period[:len("2006-01")]
+			to = from
+		}
+	}
+	if from != "" {
+		out.PeriodFrom = from
+		if out.BossRewrite.Metric != "" {
+			out.BossRewrite.PeriodFrom = from
+		}
+	}
+	if to != "" {
+		out.PeriodTo = to
+		if out.BossRewrite.Metric != "" {
+			out.BossRewrite.PeriodTo = to
+		}
+	}
+	return out
 }
 
 func (e *Engine) annotateContractDetailSourceAttribution(result Result, fallbackTables []string) Result {

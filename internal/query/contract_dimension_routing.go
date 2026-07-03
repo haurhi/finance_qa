@@ -50,7 +50,24 @@ func looksLikeContractDimensionSubject(q string) bool {
 	if q == "" {
 		return false
 	}
-	return containsAny(q, []string{"合同", "协议", "项目"}) || hasContractContentCodeSubject(q)
+	return containsAny(q, []string{"合同", "协议", "项目"}) ||
+		hasContractContentCodeSubject(q) ||
+		looksLikeContractCounterpartyOperatingSubject(q)
+}
+
+func looksLikeContractCounterpartyOperatingSubject(q string) bool {
+	if shouldUseExplicitFinancialAccountQuestion(q) || isCounterpartyClassificationQuestion(q) {
+		return false
+	}
+	if !containsAny(q, []string{"客户", "供应商"}) {
+		return false
+	}
+	switch inferContractAskedTopic(q) {
+	case "receivable", "payable", "invoice", "revenue", "cost", "profit":
+		return true
+	default:
+		return false
+	}
 }
 
 func looksLikeSpecificContractDimensionSubject(q string) bool {
@@ -69,6 +86,7 @@ func looksLikeCompanyScopeProjectAggregateQuestion(q string) bool {
 	if containsAny(q, []string{
 		"所有项目", "全部项目", "全量项目",
 		"项目口径", "项目成本口径", "按项目口径", "按项目成本口径", "从项目口径",
+		"项目应收", "项目应付", "项目结算", "项目营收", "项目收入",
 		"未付款的项目", "没有付款的项目", "未支付的项目", "没付款的项目",
 		"项目及对应金额", "项目和金额", "项目金额",
 		"哪些项目", "有哪些项目", "每个项目", "项目分别", "项目清单", "项目列表",
@@ -182,6 +200,9 @@ func shouldUseCompanyScopeContractAggregateWithConfig(question string, cfg RuleC
 		return false
 	}
 	if shouldForceCompanyScopeContractAggregateWithConfig(q, cfg) {
+		return true
+	}
+	if looksLikeCompanyScopeProjectAggregateQuestion(q) {
 		return true
 	}
 	entity := extractNamedEntityFromQuestion(q)

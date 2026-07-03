@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"strings"
 	"testing"
+	"time"
 
 	"financeqa/internal/query"
 
@@ -426,6 +427,107 @@ VALUES ('bank-statement', '2026-Q1', '南京优集数据科技有限公司', 'te
 	sourceUpdateNote, _ := res.Data["source_update_note"].(string)
 	if !strings.Contains(sourceUpdateNote, "2026-05-06 10:15:00") {
 		t.Fatalf("source_update_note should use fin_file_mappings.updated_at, got %q", sourceUpdateNote)
+	}
+}
+
+func TestBankCashFlowSourceNoteUsesAdjustedLatestBankPeriodMapping(t *testing.T) {
+	runParallelHeavyQueryTest(t)
+
+	dbPath := buildEntityRoutingTestDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS fin_file_mappings (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	table_type TEXT,
+	period TEXT,
+	company TEXT,
+	storage_key TEXT,
+	file_name TEXT,
+	description TEXT,
+	file_size INTEGER,
+	created_at TEXT,
+	updated_at TEXT
+);
+INSERT INTO fin_file_mappings(table_type, period, company, storage_key, file_name, updated_at)
+VALUES ('bank-statement', '2026-Q1', '南京优集数据科技有限公司', 'tenant/uhub/finance/2026/交易查询，20260101-20260331，共143笔.xlsx', '交易查询，20260101-20260331，共143笔.xlsx', '2026-05-06 10:15:00');
+`); err != nil {
+		_ = db.Close()
+		t.Fatalf("seed finance file mapping: %v", err)
+	}
+	_ = db.Close()
+
+	engine, err := query.NewEngine(dbPath, testCompany, query.WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.Query("银行卡上，最新完整月份净现金流是多少？")
+	if !res.Success {
+		t.Fatalf("query failed: %+v", res)
+	}
+	if got := res.Data["period"]; got != "2026-02" {
+		t.Fatalf("period = %v, want adjusted latest bank data month 2026-02; data=%+v", got, res.Data)
+	}
+	sourceSummary, _ := res.Data["source_summary"].(string)
+	if !strings.Contains(sourceSummary, "交易查询，20260101-20260331，共143笔.xlsx") {
+		t.Fatalf("source_summary should use adjusted period bank mapping, got %q; data=%+v", sourceSummary, res.Data)
+	}
+	sourceUpdateNote, _ := res.Data["source_update_note"].(string)
+	if !strings.Contains(sourceUpdateNote, "2026-05-06 10:15:00") {
+		t.Fatalf("source_update_note should use adjusted period bank mapping, got %q", sourceUpdateNote)
+	}
+}
+
+func TestContractDimensionSourceNoteUsesAdjustedContractPeriodMapping(t *testing.T) {
+	runParallelHeavyQueryTest(t)
+
+	dbPath := buildContractQueryTestDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS fin_file_mappings (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	table_type TEXT,
+	period TEXT,
+	company TEXT,
+	storage_key TEXT,
+	file_name TEXT,
+	description TEXT,
+	file_size INTEGER,
+	created_at TEXT,
+	updated_at TEXT
+);
+INSERT INTO fin_file_mappings(table_type, period, company, storage_key, file_name, updated_at)
+VALUES ('fund-income', '2026-Q1', '南京优集数据科技有限公司', 'tenant/uhub/finance/2026/优集收入、成本计算表 - 上传.xlsx', '优集收入、成本计算表 - 上传.xlsx', '2026-05-06 09:30:00');
+`); err != nil {
+		_ = db.Close()
+		t.Fatalf("seed finance file mapping: %v", err)
+	}
+	_ = db.Close()
+
+	engine, err := query.NewEngine(dbPath, testCompany, query.WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.Query("飞未云科客户最新完整月份应收未收还有多少？")
+	if !res.Success {
+		t.Fatalf("query failed: %+v", res)
+	}
+	sourceSummary, _ := res.Data["source_summary"].(string)
+	if !strings.Contains(sourceSummary, "优集收入、成本计算表 - 上传.xlsx") || !strings.Contains(sourceSummary, "26年Q1收入明细") {
+		t.Fatalf("source_summary should use adjusted contract period mapping and sheet partition, got %q; data=%+v", sourceSummary, res.Data)
+	}
+	sourceUpdateNote, _ := res.Data["source_update_note"].(string)
+	if !strings.Contains(sourceUpdateNote, "2026-05-06 09:30:00") {
+		t.Fatalf("source_update_note should use adjusted contract period mapping, got %q", sourceUpdateNote)
 	}
 }
 

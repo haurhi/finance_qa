@@ -556,10 +556,17 @@ func TestSupplierProjectPayableUsesLatestProjectPaidAmount(t *testing.T) {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS fin_file_mappings (table_type TEXT, period TEXT, company TEXT, storage_key TEXT, file_name TEXT, updated_at TEXT)`,
 		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-ZX-001','南京众信数通智能科技有限公司','推广数据合同-京东')`,
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-ZX-R-001','南京众信数通智能科技有限公司','南京众信客户收入合同')`,
+		`INSERT INTO fin_fund_income(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, received_amount, is_invoiced, invoice_amount) VALUES
+		 ('C-ZX-R-001','2026-06','contract_fund_income','26年Q2收入明细',8888,8888,'是',8888)`,
 		`INSERT INTO fin_cost_settlements(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, paid_amount, is_invoiced, invoice_amount) VALUES
 		 ('C-ZX-001','2026-05','contract_revenue_cost','成本-月度结算',169444.35,0,'是',169444.35),
 		 ('C-ZX-001','2026-06','contract_revenue_cost','成本-月度结算',245367.43,414811.78,'是',245367.43)`,
+		`INSERT INTO fin_file_mappings(table_type, period, company, storage_key, file_name, updated_at) VALUES
+		 ('fund-income','2026-Q2','测试公司','finance/优集收入、成本计算表 - 上传.xlsx','优集收入、成本计算表 - 上传.xlsx','2026-07-01 08:00:00'),
+		 ('cost-settlements','2026-Q2','测试公司','finance/优集收入、成本计算表 - 上传.xlsx','优集收入、成本计算表 - 上传.xlsx','2026-07-01 08:00:00')`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
@@ -595,6 +602,14 @@ func TestSupplierProjectPayableUsesLatestProjectPaidAmount(t *testing.T) {
 	}
 	if !strings.Contains(res.Message, "应付未付 0.00") {
 		t.Fatalf("message should report zero payable after latest payment coverage, got %q", res.Message)
+	}
+	sourceTables := anySourceStringSlice(res.Data["source_tables"])
+	if containsString(sourceTables, "fin_fund_income") {
+		t.Fatalf("payable source_tables should not include revenue table for mixed-role subject: %#v", sourceTables)
+	}
+	sourceSummary, _ := res.Data["source_summary"].(string)
+	if !strings.Contains(sourceSummary, "成本-月度结算") || strings.Contains(sourceSummary, "收入明细") {
+		t.Fatalf("payable source_summary should show cost sheet only, got %q; data=%+v", sourceSummary, res.Data)
 	}
 }
 

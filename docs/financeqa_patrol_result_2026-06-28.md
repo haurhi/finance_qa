@@ -339,3 +339,74 @@ NODE
 - 不要把 `至今`、`上个月底`、`上一个完整自然月月底` 分散在多个解析器里各自处理成不同结果。
 - 先修 FinanceQA 返回的结构化结果和最终 answer，再看 OpenClaw 是否改写或省略。
 - 修完后必须用同源数据在 clawdbot 上重跑这 41 条，作为第一轮验收。
+
+## 12. 2026-07-03 FinanceQA 本体修复补充
+
+本轮修复只改 FinanceQA 查询本体，不修改巡检 scorer，也不让 OpenClaw bridge 直出 `final_answer`。修复原则是把巡检暴露的问题收敛为通用口径规则、统一来源归因和回归测试，不按生产金额、供应商、客户、合同名或某条问题文本做硬编码。
+
+### 12.1 来源归因使用实际执行期间
+
+问题现象：
+
+- `银行卡上，最新完整月份净现金流是多少？` 金额和期间正确，但来源显示 `未记录`。
+- 合同/客户/供应商维度题金额正确，但来源或来源更新时间缺失。
+
+修复点：
+
+- 来源归因在查 `fin_file_mappings` 前，优先从结果结构里的 `period_from`、`period_to`、`period` 反推实际执行期间。
+- 当问题问“最新完整月份”但执行期回退到最新有数据月份时，来源映射也随执行期回退，而不是继续用原始请求期。
+
+对应代码：
+
+- `internal/query/source_attribution_render.go`
+- `tests/unit/query/source_attribution_test.go`
+
+### 12.2 显式序时账口径必须归因到序时账
+
+问题现象：
+
+- `按序时账口径，最新完整月份账上净利润是多少？` 金额和回答风格正确，但 `source_constraint=journal` 时仍归因到 `fin_income_statement`，导致 `来源：未记录` 或来源口径不一致。
+
+修复点：
+
+- 明确出现 `序时账口径`、`序时帐口径`、`凭证口径` 的核心指标问题，使用 journal-only 月度账务汇总。
+- 普通 `账上利润/账上收入` 仍保留原有利润表优先和现金/账务对照能力；只有显式指定序时账/凭证时才强制序时账来源。
+- 原有“利润表缺失时自动回退序时账”的路径仍保留 `journal_fallback` 标识，避免改变既有月度 fallback 语义。
+
+对应代码：
+
+- `internal/query/query_execution_stage_policy.go`
+- `internal/query/core_metrics_accrual_query.go`
+- `internal/query/reconciliation_book.go`
+- `internal/query/hardening_core_metric_test.go`
+
+### 12.3 合同维度应付题过滤收入 sheet 噪声
+
+问题现象：
+
+- 南京众信等混合主体在问“项目应付未付/未付款”时，金额正确，但来源中同时出现收入明细和成本月度结算，老板可见来源略噪。
+
+修复点：
+
+- 合同维度来源表选择由单纯 `role` 改为 `role + asked_topic`。
+- `payable`、`invoice`、`cost`、`payments` 只保留成本结算/付款相关来源；`revenue`、`receipts` 只保留收入相关来源；`profit` 保留收入和成本。
+- 表名仍来自规则配置并保留 `tenant_uhub.*` 前缀，只按 base table 做通用过滤，避免破坏结构化契约。
+
+对应代码：
+
+- `internal/query/source_attribution_collector.go`
+- `internal/query/contract_dimension_collect.go`
+- `internal/query/contract_arap_priority_test.go`
+
+### 12.4 验证命令
+
+本轮本地验证已覆盖：
+
+```bash
+go test ./internal/query -run 'TestExplicitJournalNetProfitUsesSingleBookPerspective|TestSupplierProjectPayableUsesLatestProjectPaidAmount' -count=1
+go test ./internal/query ./tests/unit/query ./tests/integration -count=1
+make test-full
+make test-business
+go build ./cmd/financeqa/...
+git diff --check
+```

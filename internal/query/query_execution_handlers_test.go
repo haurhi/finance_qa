@@ -7,6 +7,7 @@ func TestExecutionStageHandlersCoverOperationalAndSourceStages(t *testing.T) {
 	required := []executionStage{
 		executionStageHRBreakdown,
 		executionStageOrchestrator,
+		executionStageDirectAccrualCoreMetric,
 		executionStageDirectContractDimension,
 		executionStageDirectCoreMetricRange,
 		executionStageDirectSupplierPayments,

@@ -55,6 +55,9 @@ func resolveSourceExecutionStages(ctx queryExecutionContext) []executionStage {
 	if shouldUseDirectPreciseBalance(ctx) {
 		builder.add(executionStageDirectPreciseBalance)
 	}
+	if shouldUseDirectAccrualCoreMetric(ctx) {
+		builder.add(executionStageDirectAccrualCoreMetric)
+	}
 	if shouldUseOrchestratorForSpec(ctx.spec) {
 		builder.add(executionStageOrchestrator)
 	}
@@ -93,6 +96,37 @@ func shouldUseDirectPreciseBalance(ctx queryExecutionContext) bool {
 		return false
 	}
 	return containsAny(ctx.q, []string{"余额", "期末", "期初", "货币资金", "银行存款"})
+}
+
+func shouldUseDirectAccrualCoreMetric(ctx queryExecutionContext) bool {
+	if ctx.hasRealEntity || shouldUseReconciliation(ctx.q) {
+		return false
+	}
+	if ctx.spec.QueryFamily != QueryFamilyCoreMetric {
+		return false
+	}
+	if !asksExplicitAccrualOnlySource(ctx.q) {
+		return false
+	}
+	if ctx.spec.SourceConstraint != BossSourceJournal && ctx.spec.BossRewrite.Perspective != BossPerspectiveFinancialAccount {
+		return false
+	}
+	switch ctx.spec.MetricKind {
+	case MetricKindRevenue, MetricKindCost, MetricKindProfit:
+		return true
+	default:
+		return containsAny(ctx.q, []string{"收入", "营收", "成本", "费用", "利润", "净利润", "净利"})
+	}
+}
+
+func asksExplicitAccrualOnlySource(q string) bool {
+	return containsAny(q, []string{
+		"按序时账口径", "序时账口径", "序时帐口径",
+		"按财务账口径", "财务账口径",
+		"按会计账口径", "会计账口径",
+		"按利润表口径", "利润表口径",
+		"按凭证口径", "凭证口径",
+	})
 }
 
 func resolveLegacySourceFallbackStages(ctx queryExecutionContext) []executionStage {

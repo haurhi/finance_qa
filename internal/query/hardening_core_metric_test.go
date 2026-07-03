@@ -242,6 +242,74 @@ func TestLatestCompleteBookMetricUsesLatestBookDataMonth(t *testing.T) {
 	}
 }
 
+func TestExplicitJournalNetProfitUsesSingleBookPerspective(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "hardening-journal-net-profit-single-perspective.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	stmts := []string{
+		`CREATE TABLE income_statement (company TEXT, period TEXT, item_name TEXT, current_amount REAL, cumulative_amount REAL)`,
+		`CREATE TABLE bank_statement (company TEXT, transaction_date TEXT, credit_amount REAL, debit_amount REAL, counterparty_name TEXT, summary TEXT)`,
+		`CREATE TABLE journal (company TEXT, period TEXT, voucher_date TEXT, voucher_no TEXT, account_code TEXT, account_name TEXT, summary TEXT, direction TEXT, amount REAL, debit_amount REAL, credit_amount REAL, counterparty TEXT)`,
+		`CREATE TABLE balance_sheet (company TEXT, period TEXT, account_code TEXT, account_name TEXT, opening_balance REAL, closing_balance REAL)`,
+		`CREATE TABLE balance_detail (company TEXT, year INTEGER, period TEXT, account_code TEXT, account_name TEXT, opening_debit REAL, opening_credit REAL, current_debit REAL, current_credit REAL, closing_debit REAL, closing_credit REAL)`,
+		`CREATE TABLE fin_file_mappings (table_type TEXT, period TEXT, company TEXT, storage_key TEXT, file_name TEXT, updated_at TEXT)`,
+		`INSERT INTO income_statement(company, period, item_name, current_amount, cumulative_amount) VALUES
+		 ('测试公司','2026-03','营业收入',1000,1000),
+		 ('测试公司','2026-03','营业成本',700,700),
+		 ('测试公司','2026-03','所得税费用',8,8),
+		 ('测试公司','2026-03','净利润',292,292)`,
+		`INSERT INTO journal(company, period, voucher_date, voucher_no, account_code, account_name, summary, direction, amount, debit_amount, credit_amount, counterparty) VALUES
+		 ('测试公司','2026-03','2026-03-31','记-0001','600101','主营业务收入','确认3月收入','贷',1000,0,1000,'客户A'),
+		 ('测试公司','2026-03','2026-03-31','记-0002','640101','主营业务成本','确认3月成本','借',700,700,0,'供应商A'),
+		 ('测试公司','2026-03','2026-03-31','记-0003','680101','所得税费用','计提所得税','借',8,8,0,'')`,
+		`INSERT INTO bank_statement(company, transaction_date, credit_amount, debit_amount, counterparty_name, summary)
+		 VALUES ('测试公司','2026-03-31',800,600,'客户A','3月收付')`,
+		`INSERT INTO fin_file_mappings(table_type, period, company, storage_key, file_name, updated_at) VALUES
+		 ('income-statement','2026-Q1','测试公司','finance/利润表.xlsx','利润表.xlsx','2026-04-02 08:00:00'),
+		 ('journal','2026-Q1','测试公司','finance/南京优集1-3月序时账.xls','南京优集1-3月序时账.xls','2026-04-03 08:00:00')`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec stmt failed: %v", err)
+		}
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.Query("按序时账口径，最新完整月份账上净利润是多少？")
+	if !res.Success {
+		t.Fatalf("query failed: message=%s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["period"]; got != "2026-03" {
+		t.Fatalf("period = %v, want latest journal data month 2026-03; data=%+v", got, res.Data)
+	}
+	if got := res.Data["account_value"]; got != float64(292) {
+		t.Fatalf("account_value = %v, want net profit 292; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if strings.Contains(res.Message, "银行卡") || strings.Contains(res.Message, "现金口径") || strings.Contains(res.Message, "差异") {
+		t.Fatalf("explicit journal net profit should not include bank cashflow or reconciliation wording, got: %s", res.Message)
+	}
+	if _, ok := res.Data["cash_flow"]; ok {
+		t.Fatalf("explicit journal net profit should not carry cash_flow data: %+v", res.Data)
+	}
+	sourceTables := anySourceStringSlice(res.Data["source_tables"])
+	if !containsString(sourceTables, "fin_journal") || containsString(sourceTables, "fin_income_statement") || containsString(sourceTables, "fin_bank_statement") {
+		t.Fatalf("source_tables = %#v, want journal-only source attribution", sourceTables)
+	}
+	sourceSummary, _ := res.Data["source_summary"].(string)
+	if !strings.Contains(sourceSummary, "南京优集1-3月序时账.xls") || strings.Contains(sourceSummary, "利润表.xlsx") {
+		t.Fatalf("source_summary = %q, want journal mapping only; data=%+v", sourceSummary, res.Data)
+	}
+}
+
 func TestExplicitReconciliationQuestionBypassesCoreMetricSummaryRoute(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "hardening-reconciliation-route.sqlite")
 	db, err := sql.Open("sqlite", dbPath)

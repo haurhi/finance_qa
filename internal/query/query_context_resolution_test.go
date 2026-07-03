@@ -492,6 +492,26 @@ func TestResolveQueryRoutingUsesContractAnchorForRelativeContractQuestions(t *te
 	}
 }
 
+func TestCustomerReceivableQuestionUsesContractDimensionWithoutProjectKeyword(t *testing.T) {
+	dbPath := buildQueryContextContractAnchorDB(t)
+	engine, err := NewEngine(dbPath, "测试公司")
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	route := engine.resolveQueryRouting("飞未云科客户应收未收还有多少？")
+	if route.entity != "飞未云科（深圳）技术有限公司" {
+		t.Fatalf("entity = %q, want %q", route.entity, "飞未云科（深圳）技术有限公司")
+	}
+	if route.spec.QueryFamily != QueryFamilyContractDimension {
+		t.Fatalf("query_family = %s, want %s; spec=%+v", route.spec.QueryFamily, QueryFamilyContractDimension, route.spec)
+	}
+	if !route.spec.NeedsContractDimension {
+		t.Fatalf("NeedsContractDimension = false, want true; spec=%+v", route.spec)
+	}
+}
+
 func TestResolveQueryRoutingShortQuarterRevenueStaysCompanyAggregate(t *testing.T) {
 	dbPath := buildQueryContextResolutionDB(t)
 	engine, err := NewEngine(dbPath, "测试公司")
@@ -654,6 +674,83 @@ func TestGrossMarginQuestionUsesCompanyContractAggregate(t *testing.T) {
 	}
 	if !route.spec.PreferContractAggregate {
 		t.Fatalf("PreferContractAggregate = false, want contract aggregate")
+	}
+}
+
+func TestProjectARAPAggregateRewriteDoesNotRequireEntity(t *testing.T) {
+	dbPath := buildQueryContextResolutionDB(t)
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	questions := []string{
+		"项目口径 2025年10月起至今 应付未付 未付款",
+		"按项目应收口径，从2025年10月起至今未回款合计多少？",
+	}
+	for _, question := range questions {
+		route := engine.resolveQueryRouting(question)
+		if route.entity != "" || route.hasRealEntity {
+			t.Fatalf("%q entity = %q hasRealEntity=%t, want company aggregate", question, route.entity, route.hasRealEntity)
+		}
+		if route.spec.QueryFamily != QueryFamilyCoreMetric {
+			t.Fatalf("%q query_family = %s, want %s; spec=%+v", question, route.spec.QueryFamily, QueryFamilyCoreMetric, route.spec)
+		}
+		if route.spec.NeedsContractDimension {
+			t.Fatalf("%q NeedsContractDimension = true, want false; spec=%+v", question, route.spec)
+		}
+		if !route.spec.PreferContractAggregate {
+			t.Fatalf("%q PreferContractAggregate = false, want contract aggregate; spec=%+v", question, route.spec)
+		}
+	}
+}
+
+func TestLatestVisibleProjectSettlementRevenueUsesCompanyContractAggregate(t *testing.T) {
+	dbPath := buildQueryContextResolutionDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if _, err := db.Exec(`
+INSERT INTO fin_contracts(contract_id, customer_name, contract_content)
+VALUES ('C-JUN-001','六月客户','六月项目');
+INSERT INTO fin_fund_income(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, received_amount, is_invoiced, invoice_amount)
+VALUES ('C-JUN-001','2026-06','contract_fund_income','26年Q2收入明细',300,100,'是',200)`); err != nil {
+		_ = db.Close()
+		t.Fatalf("seed june income: %v", err)
+	}
+	_ = db.Close()
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	route := engine.resolveQueryRouting("最新可见月份，项目结算营收是多少？")
+	if route.entity != "" || route.hasRealEntity {
+		t.Fatalf("entity = %q hasRealEntity=%t, want company project revenue", route.entity, route.hasRealEntity)
+	}
+	if route.spec.QueryFamily != QueryFamilyCoreMetric {
+		t.Fatalf("query_family = %s, want %s; spec=%+v", route.spec.QueryFamily, QueryFamilyCoreMetric, route.spec)
+	}
+	if !route.spec.PreferContractAggregate {
+		t.Fatalf("PreferContractAggregate = false, want contract aggregate; spec=%+v", route.spec)
+	}
+
+	res := engine.Query("最新可见月份，项目结算营收是多少？")
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["period"]; got != "2026-06" {
+		t.Fatalf("period = %v, want 2026-06; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := res.Data["total"]; got != float64(300) {
+		t.Fatalf("total = %v, want project settlement revenue 300; data=%+v", got, res.Data)
+	}
+	if strings.Contains(res.Message, "账务数据仅到") || strings.Contains(res.Message, "银行卡") {
+		t.Fatalf("project settlement revenue should not answer account/cash reconciliation, got: %s", res.Message)
 	}
 }
 

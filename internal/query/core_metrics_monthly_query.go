@@ -58,7 +58,7 @@ func (e *Engine) queryMonthlySummary(question, from, to string) Result {
 
 func buildMonthlyCoreMetricResultData(year, month int, bookSource string, book monthlyBookView, cumulative *accounting.IncomeStatementResult, cash *accounting.CashPerspective, bridgeMap map[string]any) map[string]any {
 	cashFlowSummary := buildCoreMetricCashFlowSummary(cash)
-	data := buildCoreMetricSharedResultFields(bookSource, book, book.Profit, cashFlowSummary, bridgeMap)
+	data := buildCoreMetricSharedResultFields(bookSource, book, book.Profit, cashFlowSummary, bridgeMap, true)
 	data["monthly"] = buildCoreMetricMonthlyPayload(year, month, bookSource, book)
 	data["cumulative"] = cumulative
 	data["cash_flow"] = cash

@@ -50,7 +50,7 @@ func (e *Engine) collectContractDimensionSummaryForPeriod(question, entity, from
 	if askedTopic == "content" {
 		summary.Role = "contract_content"
 		summary.Data["role"] = "contract_content"
-		summary.Data["source_tables"] = contractSourceTablesForRoleWithConfig("contract_content", cfg)
+		summary.Data["source_tables"] = contractSourceTablesForRoleAndTopicWithConfig("contract_content", "content", cfg)
 		applyContractPerspectiveAliases(summary.Data)
 		return summary, nil
 	}
@@ -154,7 +154,7 @@ func newContractDimensionSummary(entity, role, from, to, askedTopic string, cont
 			"contract_count": len(contracts),
 			"contracts":      contractList,
 			"asked_topic":    askedTopic,
-			"source_tables":  contractSourceTablesForRoleWithConfig(role, cfg),
+			"source_tables":  contractSourceTablesForRoleAndTopicWithConfig(role, askedTopic, cfg),
 		},
 		ExecutedSQL: []string{
 			"contract_lookup: SELECT contract_id, customer_name, contract_content FROM fin_contracts WHERE customer_name LIKE ? OR contract_content LIKE ? ORDER BY contract_id",

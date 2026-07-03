@@ -22,6 +22,9 @@ func shouldUseReconciliation(q string) bool {
 }
 
 func (e *Engine) queryReconciliation(question, from, to string) Result {
+	requestedPeriodLabel := displayPeriod(from, to)
+	actualFrom, actualTo, adjusted, coverageNote := e.resolveReconciliationPeriod(question, from, to)
+	from, to = actualFrom, actualTo
 	periodLabel := displayPeriod(from, to)
 	e.calc.ResetTrace()
 
@@ -37,6 +40,9 @@ func (e *Engine) queryReconciliation(question, from, to string) Result {
 	highlights := e.collectReconciliationHighlights(from, to, 8, 4)
 
 	logs := append([]string{}, e.calc.CalculationLogs...)
+	if coverageNote != "" {
+		logs = append([]string{coverageNote}, logs...)
+	}
 	logs = append(logs, bookLogs...)
 	logs = append(logs,
 		fmt.Sprintf("[差异解释] %s 账上收入 %.2f, 账上成本及费用 %.2f, 净利润 %.2f, 利润 %.2f (营业外收入 %.2f, 营业外支出 %.2f)", periodLabel, book.Revenue, book.TotalCost, book.NetProfit, book.Profit, book.NonOperatingIncome, book.NonOperatingExpense),
@@ -66,6 +72,17 @@ func (e *Engine) queryReconciliation(question, from, to string) Result {
 
 	msg := e.composeBossReconciliationMessage(periodLabel, book, bookSource, cash, bridge, highlights)
 	data := buildReconciliationResultData(periodLabel, book, bookSource, cash, highlights, bridgeMap)
+	if adjusted {
+		data["period_adjusted"] = true
+		data["requested_period"] = requestedPeriodLabel
+	}
+	data["period_from"] = from
+	data["period_to"] = to
+	data["query_spec_overrides"] = map[string]any{
+		"period_from": from,
+		"period_to":   to,
+		"time_scope":  string(detectTimeScope(question, from, to, e.getLatestPeriodAnchor())),
+	}
 
 	return Result{
 		Success:         true,
@@ -75,4 +92,71 @@ func (e *Engine) queryReconciliation(question, from, to string) Result {
 		ExecutedSQL:     sqls,
 		CalculationLogs: logs,
 	}
+}
+
+func (e *Engine) resolveReconciliationPeriod(question, from, to string) (string, string, bool, string) {
+	from = strings.TrimSpace(from)
+	to = strings.TrimSpace(to)
+	if from == "" || to == "" {
+		return from, to, false, ""
+	}
+	if e.reconciliationHasDataForRange(question, from, to) {
+		return from, to, false, ""
+	}
+	if !contractAggregateCanUseLatestAvailablePeriod(question) {
+		return from, to, false, ""
+	}
+	latest := e.latestCommonReconciliationPeriod(question)
+	if latest == "" {
+		return from, to, false, ""
+	}
+	actualFrom := bankCashFlowFallbackPeriodFrom(question, latest)
+	if actualFrom == "" {
+		actualFrom = from
+	}
+	if actualFrom == "" || actualFrom > latest {
+		actualFrom = latest
+	}
+	actualTo := latest
+	if actualFrom > actualTo {
+		actualFrom = actualTo
+	}
+	if !e.reconciliationHasDataForRange(question, actualFrom, actualTo) {
+		return from, to, false, ""
+	}
+	if actualFrom == from && actualTo == to {
+		return from, to, false, ""
+	}
+	note := fmt.Sprintf("[账银对比覆盖] requested=%s actual=%s reason=请求期间缺少账务或银行流水数据，改用两类数据共同可用的最新期间",
+		displayPeriod(from, to),
+		displayPeriod(actualFrom, actualTo))
+	return actualFrom, actualTo, true, note
+}
+
+func (e *Engine) reconciliationHasDataForRange(question, from, to string) bool {
+	if !e.bankStatementHasAmountRows(from, to) {
+		return false
+	}
+	if latestBank := e.latestBankStatementPeriodWithAmountRows(); latestBank != "" && to > latestBank {
+		return false
+	}
+	request := resolveCoreMetricRequestWithConfig(question, "利润", e.currentRuleConfig())
+	coverage := e.resolveCoreMetricCoverageForRequest(from, to, request)
+	return coverage.HasData && !coverage.Truncated
+}
+
+func (e *Engine) latestCommonReconciliationPeriod(question string) string {
+	bankLatest := e.latestBankStatementPeriodWithAmountRows()
+	if bankLatest == "" {
+		return ""
+	}
+	request := resolveCoreMetricRequestWithConfig(question, "利润", e.currentRuleConfig())
+	bookLatest := e.latestAvailableFinancialPeriodForRequest(request)
+	if bookLatest == "" {
+		return ""
+	}
+	if bookLatest < bankLatest {
+		return bookLatest
+	}
+	return bankLatest
 }

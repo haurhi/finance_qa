@@ -39,6 +39,32 @@ func TestResolveSourceAttributionPlanForCounterpartyReceipts(t *testing.T) {
 	}
 }
 
+func TestResolveSourceAttributionPlanForReconciliationUsesBookAndBankPrimarySources(t *testing.T) {
+	spec := QuerySpec{
+		QueryFamily: QueryFamilyReconciliation,
+	}
+	data := map[string]any{
+		"book_source": "income_statement",
+		"source_tables": []string{
+			"fin_income_statement",
+			"fin_bank_statement",
+			"fin_journal",
+		},
+	}
+
+	plan := resolveSourceAttributionPlan(spec, data)
+	assertStringSlicesEqual(t, plan.tables, []string{
+		"fin_income_statement",
+		"fin_bank_statement",
+		"fin_journal",
+	})
+	assertStringSlicesEqual(t, plan.primaryBaseTables, []string{
+		"fin_income_statement",
+		"fin_bank_statement",
+	})
+	assertStringSlicesEqual(t, plan.supportingBaseTables, []string{"fin_journal"})
+}
+
 func assertStringSlicesEqual(t *testing.T, got, want []string) {
 	t.Helper()
 	if len(got) != len(want) {

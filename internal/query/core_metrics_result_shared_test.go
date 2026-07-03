@@ -21,7 +21,7 @@ func TestBuildCoreMetricSharedResultFields(t *testing.T) {
 	}
 	bridge := map[string]any{"经营现金净额估算": float64(260)}
 
-	got := buildCoreMetricSharedResultFields("income_statement", book, 180, cashFlowSummary, bridge)
+	got := buildCoreMetricSharedResultFields("income_statement", book, 180, cashFlowSummary, bridge, true)
 
 	if got["source_tables"] == nil {
 		t.Fatalf("source_tables missing: %+v", got)
