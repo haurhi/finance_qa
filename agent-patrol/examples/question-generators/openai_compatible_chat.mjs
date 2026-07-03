@@ -2,6 +2,7 @@
 import fs from "node:fs";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
+const DEFAULT_MAX_TOKENS = 4096;
 
 main().catch((error) => {
   console.error(error instanceof Error ? error.stack ?? error.message : String(error));
@@ -98,7 +99,7 @@ async function callChatCompletions(options) {
       model: options.model,
       messages: [{ role: "user", content: options.prompt }],
       temperature: Number(process.env.AGENT_PATROL_LLM_TEMPERATURE ?? "0.7"),
-      max_tokens: Number(process.env.AGENT_PATROL_LLM_MAX_TOKENS ?? "1024")
+      max_tokens: Number(process.env.AGENT_PATROL_LLM_MAX_TOKENS ?? String(DEFAULT_MAX_TOKENS))
     };
     const responseFormat = parseResponseFormat(options.responseFormat);
     if (responseFormat) {
@@ -119,9 +120,7 @@ async function callChatCompletions(options) {
       throw new Error(`OpenAI-compatible LLM request failed ${response.status}: ${text.slice(0, 500)}`);
     }
     const payload = JSON.parse(text);
-    const content = payload?.choices?.[0]?.message?.content
-      ?? payload?.choices?.[0]?.text
-      ?? payload?.output_text;
+    const content = extractResponseContent(payload);
     if (typeof content !== "string" || !content.trim()) {
       throw new Error("OpenAI-compatible LLM response did not contain message content");
     }
@@ -129,6 +128,35 @@ async function callChatCompletions(options) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+function extractResponseContent(payload) {
+  const choice = payload?.choices?.[0];
+  const message = choice?.message;
+  return stringifyContent(message?.content)
+    ?? stringifyContent(message?.parsed)
+    ?? stringifyContent(choice?.text)
+    ?? stringifyContent(payload?.output_text);
+}
+
+function stringifyContent(value) {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    const text = value
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object") {
+          if (typeof item.text === "string") return item.text;
+          if (typeof item.content === "string") return item.content;
+        }
+        return undefined;
+      })
+      .filter(Boolean)
+      .join("\n");
+    return text || undefined;
+  }
+  if (value && typeof value === "object") return JSON.stringify(value);
+  return undefined;
 }
 
 function parseResponseFormat(value) {

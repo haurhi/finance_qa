@@ -473,3 +473,83 @@ test("scoreCase does not let an alias detail amount override a wrong primary lab
   assert.equal(score.pass, false);
   assert.deepEqual(score.failureDetails.map((failure) => failure.type), ["agent_changed_amount"]);
 });
+
+test("scoreCase accepts project payable amount stated as unpaid total", () => {
+  const score = scoreCase({
+    id: "case-15",
+    expected: {
+      amounts: [{ label: "项目应付", value: 3538259.73 }],
+      amountLabelGroups: [["项目应付", "应付未付", "未付款", "未付款合计", "未付金额"]]
+    } as any,
+    actual: {
+      source: "agent",
+      answer: [
+        "按项目成本口径，2025年10月至2026年6月，未付款合计 **3,538,259.73 元**。",
+        "期间项目成本总额 1,464.42 万元，已付款 1,110.59 万元，差额即应付未付。"
+      ].join("\n")
+    },
+    reference: {
+      source: "golden_reference",
+      answer: "2025-10~2026-06 DB金标口径先看项目汇总：项目应付 3538259.73 元。"
+    }
+  });
+
+  assert.equal(score.pass, true);
+  assert.deepEqual(score.failures, []);
+});
+
+test("scoreCase accepts bank net cash flow as bank net inflow amount alias", () => {
+  const score = scoreCase({
+    id: "case-16",
+    expected: {
+      amounts: [{ label: "银行净流入", value: -633859.33 }],
+      amountLabelGroups: [["银行净流入", "净流入", "银行净增加", "银行卡净增加", "净增加"]]
+    } as any,
+    actual: {
+      source: "agent",
+      answer: "- 银行净现金流：**-633,859.33 元**（到账 261.36 万，支出 324.74 万）"
+    },
+    reference: {
+      source: "golden_reference",
+      answer: "2026-03 DB金标口径做账上和银行流水对比：银行净流入 -633859.33 元。"
+    }
+  });
+
+  assert.equal(score.pass, true);
+  assert.deepEqual(score.failures, []);
+});
+
+test("scoreCase accepts natural unpaid wording for payable term checks", () => {
+  const score = scoreCase({
+    id: "case-17",
+    expected: {
+      mustContainAny: [["单项目应付", "项目应付", "应付未付"]],
+      amountLabelGroups: [["单项目应付", "项目应付", "应付未付", "未付款", "未付金额", "没付"]]
+    },
+    actual: {
+      source: "agent",
+      answer: "按项目成本口径，合同成本 1,500,000.00 元，账面已付 750,000.00 元，未付金额 750,000.00 元。"
+    }
+  });
+
+  assert.equal(score.pass, true);
+  assert.deepEqual(score.failures, []);
+});
+
+test("scoreCase accepts natural receivable wording for receivable term checks", () => {
+  const score = scoreCase({
+    id: "case-18",
+    expected: {
+      mustContain: ["应收未收"],
+      mustContainAny: [["项目口径", "所有项目", "项目应收"]],
+      amountLabelGroups: [["项目应收", "应收未收", "未回款", "未收款", "没收回来"]]
+    },
+    actual: {
+      source: "agent",
+      answer: "按项目应收口径，从2025年10月起至今未回款合计 2,717,692.45 元。"
+    }
+  });
+
+  assert.equal(score.pass, true);
+  assert.deepEqual(score.failures, []);
+});

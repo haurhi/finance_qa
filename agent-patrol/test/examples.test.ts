@@ -232,6 +232,22 @@ test("financeqa preset keeps business anchors in configuration", () => {
   }
 });
 
+test("financeqa preset includes natural boss wording aliases for scorer calibration", () => {
+  const config = loadConfig("presets/financeqa.yaml", {
+    OPENCLAW_AGENT_CMD: "node examples/runners/openclaw_ssh_runner.mjs --host clawdbot --question-file {questionFile} --session-id {sessionId}",
+    FINANCEQA_MCP_URL: "http://127.0.0.1/stub"
+  });
+  const aliases = (name: string): string[] => {
+    const groups = (config.templates?.[name]?.scoring?.amountLabelGroups ?? []) as string[][];
+    return groups.flat();
+  };
+
+  assert.ok(aliases("finance_project_payable_unpaid").includes("未付款合计"));
+  assert.ok(aliases("finance_single_project_payable_unpaid").includes("未付金额"));
+  assert.ok(aliases("finance_project_receivable_unpaid").includes("未回款"));
+  assert.ok(aliases("finance_profit_cash_reconciliation").includes("银行净现金流"));
+});
+
 test("financeqa preset template questions satisfy their configured anchors", () => {
   const config = loadConfig("presets/financeqa.yaml", {
     OPENCLAW_AGENT_CMD: "node examples/runners/openclaw_ssh_runner.mjs --host clawdbot --question-file {questionFile} --session-id {sessionId}",
@@ -470,9 +486,68 @@ test("OpenAI-compatible question generator CLI reads stdin and returns model con
     assert.match(stdout, /最新月份收入/);
     assert.equal(seenRequests[0]?.authorization, "Bearer test-key");
     assert.equal(seenRequests[0]?.body.model, "test-model");
+    assert.equal(seenRequests[0]?.body.max_tokens, 4096);
     assert.deepEqual(seenRequests[0]?.body.response_format, { type: "json_object" });
     const messages = seenRequests[0]?.body.messages as Array<{ role: string; content: string }>;
     assert.equal(messages[0]?.content, "rewrite this question");
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("OpenAI-compatible question generator CLI accepts provider content parts", async () => {
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        choices: [{
+          message: {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                questions: [{
+                  caseId: "case-1",
+                  template: "finance_bank_cashflow",
+                  question: "老板，银行流水最近完整月份净流入是多少？"
+                }]
+              })
+            }]
+          }
+        }]
+      }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+
+  try {
+    const child = spawn("node", ["examples/question-generators/openai_compatible_chat.mjs"], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        AGENT_PATROL_LLM_BASE_URL: `http://127.0.0.1:${address.port}/v1`,
+        AGENT_PATROL_LLM_API_KEY: "test-key",
+        AGENT_PATROL_LLM_MODEL: "test-model"
+      },
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.stdin.end("rewrite this question");
+    const status = await new Promise<number | null>((resolve) => child.on("close", resolve));
+
+    assert.equal(status, 0, stderr);
+    assert.match(stdout, /银行流水最近完整月份净流入/);
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }

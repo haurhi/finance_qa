@@ -69,6 +69,7 @@ AGENT_PATROL_LLM_API_KEY_ENV=DEEPSEEK_API_KEY
 AGENT_PATROL_LLM_BASE_URL_ENV=DEEPSEEK_BASE_URL
 AGENT_PATROL_LLM_MODEL_ENV=DEEPSEEK_MODEL
 AGENT_PATROL_LLM_RESPONSE_FORMAT=json_object
+AGENT_PATROL_LLM_MAX_TOKENS=4096
 ```
 
 The secret file should contain only provider settings and should not be committed:
@@ -81,7 +82,7 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 
 The recommended `openai_compatible_chat.mjs` command calls an OpenAI-compatible chat completions API directly, so it does not create OpenClaw/Hermes/Claude sessions. `AGENT_PATROL_LLM_CMD` can also point at any local LLM/agent CLI wrapper that reads the prompt from stdin and writes a JSON answer to stdout, but that may create agent session artifacts depending on the CLI.
 
-`AGENT_PATROL_LLM_RESPONSE_FORMAT=json_object` sends `response_format: {"type":"json_object"}` to compatible chat-completions providers. If a provider rejects that field, unset it; the parser still validates malformed output and fails closed without recursive stack overflows.
+`AGENT_PATROL_LLM_RESPONSE_FORMAT=json_object` sends `response_format: {"type":"json_object"}` to compatible chat-completions providers. `AGENT_PATROL_LLM_MAX_TOKENS` defaults to `4096` so a 14-case daily JSON rewrite is not easily truncated. If a provider rejects `response_format`, unset it; the parser still validates malformed output and fails closed without recursive stack overflows.
 
 The wrapper asks the LLM to return this protocol:
 

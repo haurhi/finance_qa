@@ -121,7 +121,7 @@ export function scoreCase(input: ScoreInput): CaseScore {
     }
   }
   for (const term of expected.mustContain ?? []) {
-    if (!normalize(answer).includes(normalize(term))) {
+    if (!termPresent(answer, term, expected.amountLabelGroups)) {
       addFailure(failures, failureDetails, `missing_term:${term}`, "scorer_term_miss", {
         message: `actual answer is missing required term: ${term}`,
         expected: term,
@@ -130,7 +130,7 @@ export function scoreCase(input: ScoreInput): CaseScore {
     }
   }
   for (const group of expected.mustContainAny ?? []) {
-    if (group.length > 0 && !group.some((term) => normalize(answer).includes(normalize(term)))) {
+    if (group.length > 0 && !group.some((term) => termPresent(answer, term, expected.amountLabelGroups))) {
       addFailure(failures, failureDetails, `missing_any_term:${group.join("|")}`, "scorer_term_miss", {
         message: `actual answer is missing one term from required group: ${group.join("|")}`,
         expected: group,
@@ -219,6 +219,22 @@ function amountPresent(answer: string, value: number, label?: string, labelGroup
 
 function amountLabelCandidates(label: string, labelGroups: string[] | string[][] | undefined): string[] {
   const candidates = [label];
+  for (const item of labelGroupCandidates(label, labelGroups)) {
+    if (!candidates.some((candidate) => normalize(candidate) === normalize(item))) {
+      candidates.push(item);
+    }
+  }
+  return candidates;
+}
+
+function termPresent(answer: string, term: string, labelGroups?: string[][]): boolean {
+  const normalizedAnswer = normalize(answer);
+  return [term, ...labelGroupCandidates(term, labelGroups)]
+    .some((candidate) => normalizedAnswer.includes(normalize(candidate)));
+}
+
+function labelGroupCandidates(label: string, labelGroups: string[] | string[][] | undefined): string[] {
+  const candidates: string[] = [];
   const groups = Array.isArray(labelGroups?.[0]) ? labelGroups as string[][] : [];
   for (const group of groups) {
     if (!group.some((item) => normalize(item) === normalize(label))) continue;
@@ -250,13 +266,12 @@ function labeledWindows(answer: string, label: string): string[] {
   const windows: string[] = [];
   let offset = answer.indexOf(label);
   while (offset >= 0) {
-    const start = Math.max(0, offset - 24);
     const afterLabel = answer.slice(offset + label.length);
     const boundary = afterLabel.search(/[。；;\n\r|]/);
     const end = boundary >= 0
       ? offset + label.length + boundary + 1
       : Math.min(answer.length, offset + label.length + 96);
-    let window = answer.slice(start, end);
+    let window = answer.slice(offset, end);
     const labelWindow = answer.slice(offset, end);
     if (!containsMoneyLike(labelWindow) && boundary >= 0 && /[\n\r]/.test(afterLabel[boundary] ?? "")) {
       const nextLine = afterLabel.slice(boundary + 1).match(/^\s*(?:[*_`]+\s*)?(?:金额|合计|总额)?\s*[:：]?\s*([*_`]*\s*-?[0-9][0-9,]*(?:\.\d+)?\s*(?:万元|万|元)?\s*[*_`]*)/);

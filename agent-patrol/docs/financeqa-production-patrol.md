@@ -33,7 +33,7 @@ RandomizedDelaySec=5m
 
 The systemd service sets `AGENT_PATROL_ENV_FILE=/opt/finance_qa/agent-patrol/examples/schedules/financeqa-production-hourly.env` and lets the wrapper source that file. Do not replace it with systemd `EnvironmentFile=`, because same-file references in command variables need bash expansion.
 
-The production question-rewrite profile sets `AGENT_PATROL_LLM_RESPONSE_FORMAT=json_object`, so compatible LLM providers are asked for JSON output at the API layer. The parser still falls back safely if the provider returns malformed text.
+The production question-rewrite profile sets `AGENT_PATROL_LLM_RESPONSE_FORMAT=json_object`, so compatible LLM providers are asked for JSON output at the API layer. The wrapper defaults `AGENT_PATROL_LLM_MAX_TOKENS` to `4096` to reduce truncated multi-case JSON. The parser still falls back safely if the provider returns malformed text.
 
 ## Reference Source
 
