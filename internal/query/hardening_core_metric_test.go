@@ -284,29 +284,34 @@ func TestExplicitJournalNetProfitUsesSingleBookPerspective(t *testing.T) {
 	}
 	defer engine.Close()
 
-	res := engine.Query("按序时账口径，最新完整月份账上净利润是多少？")
-	if !res.Success {
-		t.Fatalf("query failed: message=%s data=%+v", res.Message, res.Data)
-	}
-	if got := res.Data["period"]; got != "2026-03" {
-		t.Fatalf("period = %v, want latest journal data month 2026-03; data=%+v", got, res.Data)
-	}
-	if got := res.Data["account_value"]; got != float64(292) {
-		t.Fatalf("account_value = %v, want net profit 292; message=%s data=%+v", got, res.Message, res.Data)
-	}
-	if strings.Contains(res.Message, "银行卡") || strings.Contains(res.Message, "现金口径") || strings.Contains(res.Message, "差异") {
-		t.Fatalf("explicit journal net profit should not include bank cashflow or reconciliation wording, got: %s", res.Message)
-	}
-	if _, ok := res.Data["cash_flow"]; ok {
-		t.Fatalf("explicit journal net profit should not carry cash_flow data: %+v", res.Data)
-	}
-	sourceTables := anySourceStringSlice(res.Data["source_tables"])
-	if !containsString(sourceTables, "fin_journal") || containsString(sourceTables, "fin_income_statement") || containsString(sourceTables, "fin_bank_statement") {
-		t.Fatalf("source_tables = %#v, want journal-only source attribution", sourceTables)
-	}
-	sourceSummary, _ := res.Data["source_summary"].(string)
-	if !strings.Contains(sourceSummary, "南京优集1-3月序时账.xls") || strings.Contains(sourceSummary, "利润表.xlsx") {
-		t.Fatalf("source_summary = %q, want journal mapping only; data=%+v", sourceSummary, res.Data)
+	for _, question := range []string{
+		"按序时账口径，最新完整月份账上净利润是多少？",
+		"2026年3月 序时账 净利润",
+	} {
+		res := engine.Query(question)
+		if !res.Success {
+			t.Fatalf("query %q failed: message=%s data=%+v", question, res.Message, res.Data)
+		}
+		if got := res.Data["period"]; got != "2026-03" {
+			t.Fatalf("query %q period = %v, want latest journal data month 2026-03; data=%+v", question, got, res.Data)
+		}
+		if got := res.Data["account_value"]; got != float64(292) {
+			t.Fatalf("query %q account_value = %v, want net profit 292; message=%s data=%+v", question, got, res.Message, res.Data)
+		}
+		if strings.Contains(res.Message, "银行卡") || strings.Contains(res.Message, "现金口径") || strings.Contains(res.Message, "差异") {
+			t.Fatalf("query %q explicit journal net profit should not include bank cashflow or reconciliation wording, got: %s", question, res.Message)
+		}
+		if _, ok := res.Data["cash_flow"]; ok {
+			t.Fatalf("query %q explicit journal net profit should not carry cash_flow data: %+v", question, res.Data)
+		}
+		sourceTables := anySourceStringSlice(res.Data["source_tables"])
+		if !containsString(sourceTables, "fin_journal") || containsString(sourceTables, "fin_income_statement") || containsString(sourceTables, "fin_bank_statement") {
+			t.Fatalf("query %q source_tables = %#v, want journal-only source attribution", question, sourceTables)
+		}
+		sourceSummary, _ := res.Data["source_summary"].(string)
+		if !strings.Contains(sourceSummary, "南京优集1-3月序时账.xls") || strings.Contains(sourceSummary, "利润表.xlsx") {
+			t.Fatalf("query %q source_summary = %q, want journal mapping only; data=%+v", question, sourceSummary, res.Data)
+		}
 	}
 }
 

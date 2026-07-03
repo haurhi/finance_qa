@@ -72,7 +72,7 @@ token 文件必须由部署环境生成并 `chmod 600`；不要把 token 写入�
         "source": "path",
         "sourcePath": "/root/.openclaw/extensions/openclaw-finance",
         "installPath": "/root/.openclaw/extensions/openclaw-finance",
-        "version": "2.2.29"
+        "version": "2.2.30"
       }
     }
   }

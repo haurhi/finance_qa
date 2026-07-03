@@ -121,7 +121,7 @@ func shouldUseDirectAccrualCoreMetric(ctx queryExecutionContext) bool {
 
 func asksExplicitAccrualOnlySource(q string) bool {
 	return containsAny(q, []string{
-		"按序时账口径", "序时账口径", "序时帐口径",
+		"按序时账口径", "序时账口径", "序时帐口径", "序时账", "序时帐",
 		"按财务账口径", "财务账口径",
 		"按会计账口径", "会计账口径",
 		"按利润表口径", "利润表口径",
