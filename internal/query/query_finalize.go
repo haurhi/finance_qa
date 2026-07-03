@@ -174,6 +174,10 @@ func finalizeQueryResult(ctx queryExecutionContext, r Result) Result {
 		r = ctx.engine.annotateSourceAttribution(finalSpec, r)
 	}
 
+	if financeFacts := buildFinanceFacts(finalSpec, r.Data); financeFacts != nil {
+		r.Data["finance_facts"] = financeFacts
+	}
+
 	// 新增 bridge 兼容字段：final_answer 和 host_summary_contract。
 	// 来源归因会改写老板可见 message，兼容字段必须在归因后生成。
 	r.Data["final_answer"] = buildFinalAnswer(r)

@@ -81,21 +81,29 @@ metadata:
 ## 3. 宿主结果消费顺序
 
 1. 先解析桥接返回的 `content[0].text` JSON。
-2. 若存在 `final_answer` 或 `boss_reply_text`，必须以当前结果为权威来源组织老板可见回答：
+2. 若存在 `finance_facts` 或 `data.finance_facts`，必须优先以结构化事实包组织老板可见回答：
+   - `resolved_period` 是实际采用期间，不得改成其他月份或相对时间
+   - `requested_period` 是用户原始期间表达或请求口径，用于解释“上个完整自然月/最新完整月份”等问法
+   - `basis` 是业务口径，不得把项目口径、银行流水、序时账、余额表互相替换
+   - `metrics` / `headline_amount` 是金额事实，不能由宿主重新计算
+   - `source_files`、`source_note`、`source_update_note` 是来源事实，老板可见回答必须保留
+   - `warnings` / `explanation_hints` 只能用于解释，不得扩展出新金额或新口径
+3. 若不存在 `finance_facts`，但存在 `final_answer` 或 `boss_reply_text`，必须以当前结果为权威来源组织老板可见回答：
    - 关键数值、期间、业务口径和来源说明必须与 Go MCP 当前结果一致
    - 可以按老板汇报风格压缩或重写周边措辞，但不能改结论、改口径或改来源
    - 不得从 `executed_sql`、`calculation_logs`、`fact_sets`、`llm_payload` 或其他字段重算金额
    - 不得替换或删除其中的来源说明
-3. 若没有 `final_answer` / `boss_reply_text`，但存在 `boss_reply`，优先直接使用：
+4. 若没有 `finance_facts` / `final_answer` / `boss_reply_text`，但存在 `boss_reply`，优先直接使用：
    - `结论`
    - `原因`
    - `建议`
-4. 若存在 `host_summary_contract`，宿主摘要必须受它约束，不能脱离结构化字段自行重算。
-5. 若存在 `host_summary_supplier_payments`，宿主回答供应商付款类问题时必须优先按它的 `count / total / suppliers / top_supplier / excluded_counterparties` 来组织总结，不要只靠 `message` 或日志重拼。
-6. 若没有 `boss_reply`，再退回 `message`。
-7. Bridge 面向宿主返回的是已脱敏结构；宿主应保留并消费以下业务字段：
+5. 若存在 `host_summary_contract`，宿主摘要必须受它约束，不能脱离结构化字段自行重算。
+6. 若存在 `host_summary_supplier_payments`，宿主回答供应商付款类问题时必须优先按它的 `count / total / suppliers / top_supplier / excluded_counterparties` 来组织总结，不要只靠 `message` 或日志重拼。
+7. 若没有 `boss_reply`，再退回 `message`。
+8. Bridge 面向宿主返回的是已脱敏结构；宿主应保留并消费以下业务字段：
    - `success`
    - `answer_method`
+   - `finance_facts`
    - `final_answer`
    - `boss_reply_text`
    - `boss_reply`

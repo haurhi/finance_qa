@@ -60,11 +60,19 @@ func readContractVersions(skillPath string) (string, string) {
 func bridgeCapabilities(payload map[string]any) map[string]any {
 	capabilities := map[string]any{
 		"boss_reply":               true,
+		"finance_facts":            true,
 		"final_answer":             true,
 		"contract_summary":         true,
 		"route_decision":           true,
 		"tax_disclosure":           true,
 		"supplier_payment_summary": true,
+		"result_structures": []any{
+			"finance_facts",
+			"boss_reply",
+			"host_summary_contract",
+			"host_summary_supplier_payments",
+			"route_decision",
+		},
 		"exposed_tools": []any{
 			"finance-query",
 			"finance-host-data",

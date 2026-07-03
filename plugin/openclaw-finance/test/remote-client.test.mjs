@@ -474,6 +474,77 @@ test("prefetched finance facts guard repeated answers that skip a fresh tool cal
   });
 });
 
+test("finance facts package drives prompt context and answer guard", async () => {
+  const toolCalls = [];
+  const toolPayload = {
+    success: true,
+    final_answer: "旧答案不应作为事实源：2026-06 账上净利润 0 元。",
+    finance_facts: {
+      schema_version: "finance_facts.v1",
+      resolved_period: "2026-03",
+      requested_period: "最新完整月份",
+      basis: "序时账口径",
+      source_tables: ["fin_journal"],
+      source_files: ["《测试序时账.xls》"],
+      source_note: "来源：《测试序时账.xls》",
+      source_update_note: "来源更新时间：2026-07-01 12:00:00",
+      metrics: { "账上净利润": 291291.55 },
+      headline_metric: "账上净利润",
+      headline_amount: 291291.55,
+      warnings: ["数据只到 2026-03，2026-06 未入库"],
+      explanation_hints: ["按序时账本年利润科目取数"],
+      required_atoms: [
+        "期间：2026-03",
+        "口径：序时账口径",
+        "金额：291291.55 元",
+        "来源：《测试序时账.xls》",
+        "来源更新时间：2026-07-01 12:00:00"
+      ]
+    }
+  };
+
+  await withFinancePluginHarness(toolCalls, async ({ hooks }) => {
+    const beforePrompt = hooks.get("before_prompt_build");
+    const beforeWrite = hooks.get("before_message_write");
+    const sessionKey = "finance-facts-package-session";
+
+    const promptResult = await beforePrompt({
+      sessionKey,
+      prompt: "按序时账口径，最新完整月份账上净利润是多少？",
+      messages: []
+    }, { sessionKey });
+
+    assert.match(promptResult.prependSystemContext, /FinanceQA 决定事实，OpenClaw 决定表达/);
+    assert.match(promptResult.prependSystemContext, /结构化事实包/);
+    assert.match(promptResult.prependSystemContext, /resolved_period=2026-03/);
+    assert.match(promptResult.prependSystemContext, /requested_period=最新完整月份/);
+    assert.match(promptResult.prependSystemContext, /basis=序时账口径/);
+    assert.match(promptResult.prependSystemContext, /标准金额：291291\.55/);
+    assert.match(promptResult.prependSystemContext, /数据只到 2026-03/);
+    assert.doesNotMatch(promptResult.prependSystemContext, /旧答案不应作为事实源/);
+
+    const wrongAssistantAnswer = {
+      role: "assistant",
+      content: [{
+        type: "text",
+        text: [
+          "2026-06 账上净利润为 0 元。",
+          "来源：未记录"
+        ].join("\n")
+      }],
+      stopReason: "stop"
+    };
+    const patched = beforeWrite({ message: wrongAssistantAnswer }, { sessionKey })?.message;
+    assert.match(patched.content[0].text, /期间：2026-03/);
+    assert.match(patched.content[0].text, /口径：序时账口径/);
+    assert.match(patched.content[0].text, /金额：291291\.55 元/);
+    assert.match(patched.content[0].text, /来源：《测试序时账\.xls》/);
+    assert.match(patched.content[0].text, /来源更新时间：2026-07-01 12:00:00/);
+    assert.doesNotMatch(patched.content[0].text, /2026-06 账上净利润为 0 元/);
+    assert.doesNotMatch(patched.content[0].text, /旧答案不应作为事实源|final_answer|finance-query|工具返回/);
+  }, { toolPayload });
+});
+
 async function withServer(handler, run) {
   const server = http.createServer(async (req, res) => {
     let body = "";

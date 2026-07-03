@@ -610,6 +610,9 @@ function mustCallFinanceQuerySystemContext(latestQuestion, currentFacts) {
   const lines = [
     "财务问答系统规则：",
     latestQuestion ? `最新财务问题：${latestQuestion}` : "",
+    "核心边界：FinanceQA 决定事实，OpenClaw 决定表达，bridge 负责校验表达没有改坏事实。",
+    "若本次结果含 finance_facts 结构化事实包，金额、期间、口径、来源、来源更新时间必须来自 finance_facts；final_answer 只作为兼容参考，不是事实优先级最高的来源。",
+    "不得把 finance_facts.resolved_period 改成其他月份，不得把 finance_facts.basis 改成其他口径，不得自行重算 finance_facts.metrics。",
     "回答财务、经营、合同、回款、开票、收入、成本、利润、现金、银行、税务、应收应付、客户、供应商或来源表问题时，必须以本次 finance-query 结果为准。",
     "即使用户重复追问，也不要沿用历史对话、记忆、旧工具结果、原始 SQL、利润表/资产负债表数字或缓存摘要里的冲突金额。",
     "若本次结果含 final_answer 或 boss_reply_text，final_answer 是事实锚点，不是固定话术模板；可以重组表达顺序、表格和老板口吻。",
@@ -642,20 +645,28 @@ function parseToolResultPayload(result) {
   }
 }
 
+function normalizeFinanceFacts(value) {
+  if (!value || typeof value !== "object") return null;
+  return value;
+}
+
 function compactFinancePayload(payload) {
   if (!payload || typeof payload !== "object") return payload;
   const data = payload.data && typeof payload.data === "object" ? payload.data : {};
+  const financeFacts = normalizeFinanceFacts(payload.finance_facts || data.finance_facts);
   return {
     error: payload.error,
     success: payload.success,
-    final_answer: payload.final_answer || payload.boss_reply_text || payload.message,
-    metric: data.metric || payload.metric,
-    metric_label: data.metric_label || payload.metric_label,
-    business_basis: data.business_basis || payload.business_basis,
-    total: data.total ?? payload.total,
-    source_note: data.source_note || payload.source_note,
-    source_update_note: data.source_update_note || payload.source_update_note,
-    period: data.period || payload.period,
+    finance_facts: financeFacts,
+    final_answer: financeFacts ? "" : (payload.final_answer || payload.boss_reply_text || payload.message),
+    metric: financeFacts?.headline_metric || data.metric || payload.metric,
+    metric_label: data.metric_label || payload.metric_label || financeFacts?.headline_metric,
+    business_basis: financeFacts?.basis || data.business_basis || payload.business_basis,
+    total: financeFacts?.headline_amount ?? data.total ?? payload.total,
+    source_note: financeFacts?.source_note || data.source_note || payload.source_note,
+    source_update_note: financeFacts?.source_update_note || data.source_update_note || payload.source_update_note,
+    period: financeFacts?.resolved_period || data.period || payload.period,
+    requested_period: financeFacts?.requested_period || data.requested_period || payload.requested_period,
     source_priority: data.source_priority || payload.source_priority,
     requested_metrics: data.requested_metrics || payload.requested_metrics,
     role: data.role || payload.role,
@@ -665,7 +676,11 @@ function compactFinancePayload(payload) {
     customer_summary: data.customer_summary || payload.customer_summary,
     supplier_summary: data.supplier_summary || payload.supplier_summary,
     tax_summary: data.tax_summary || payload.tax_summary,
-    source_documents: data.source_documents || payload.source_documents,
+    source_documents: financeFacts?.source_files || data.source_documents || payload.source_documents,
+    source_tables: financeFacts?.source_tables || data.source_tables || payload.source_tables,
+    metrics: financeFacts?.metrics || data.metrics || payload.metrics,
+    warnings: financeFacts?.warnings || data.warnings || payload.warnings,
+    explanation_hints: financeFacts?.explanation_hints || data.explanation_hints || payload.explanation_hints,
     items: data.items || payload.items,
     detail_items: data.detail_items || payload.detail_items,
     source_cell_notes: data.source_cell_notes || payload.source_cell_notes,
@@ -720,6 +735,14 @@ function contractSummaryDetailRows(contractSummary) {
 
 function requiredBossVisibleAtoms(payload) {
   const atoms = [];
+  const compact = compactFinancePayload(payload);
+  const required = compact?.finance_facts?.required_atoms;
+  if (Array.isArray(required)) {
+    for (const atom of required) {
+      const line = String(atom || "").trim();
+      if (line && !atoms.includes(line)) atoms.push(line);
+    }
+  }
   for (const atom of financeFactAtomsFromPayload(payload)) {
     const line = String(typeof atom === "string" ? atom : atom?.line || "").trim();
     if (line && !atoms.includes(line)) atoms.push(line);
@@ -765,12 +788,31 @@ function pushFinanceFactAtom(atoms, value, line) {
   atoms.push({ value: key, line: text });
 }
 
+function financeFactAtomValueFromLine(line) {
+  const text = String(line || "").trim();
+  let match = text.match(/^期间[：:]\s*(.+)$/);
+  if (match) return match[1].trim();
+  match = text.match(/^口径[：:]\s*(.+)$/);
+  if (match) return match[1].trim();
+  match = text.match(/^金额[：:]\s*([0-9][0-9,]*(?:\.\d+)?)/);
+  if (match) return match[1].replace(/,/g, "").trim();
+  return text;
+}
+
 function financeFactAtomsFromPayload(payload) {
   const compact = compactFinancePayload(payload);
   if (!compact || typeof compact !== "object") return [];
   const atoms = [];
+  const required = compact.finance_facts?.required_atoms;
+  if (Array.isArray(required)) {
+    for (const line of required) {
+      const text = String(line || "").trim();
+      pushFinanceFactAtom(atoms, financeFactAtomValueFromLine(text), text);
+    }
+  }
   pushFinanceFactAtom(atoms, compact.period, compact.period ? `期间：${compact.period}` : "");
   pushFinanceFactAtom(atoms, compact.metric_label, compact.metric_label ? `口径：${compact.metric_label}` : "");
+  if (compact.business_basis) pushFinanceFactAtom(atoms, compact.business_basis, `口径：${compact.business_basis}`);
   if (compact.total !== undefined && compact.total !== null && compact.total !== "") {
     pushFinanceFactAtom(atoms, compact.total, `金额：${compact.total} 元`);
   }
@@ -951,18 +993,39 @@ function hasAssistantToolCalls(message) {
 }
 
 function appendMissingFinanceFactAtoms(text, atoms, payload) {
-  let current = replaceMalformedFinanceAmountAtoms(replaceSingleConflictingPeriodRange(String(text || ""), atoms), atoms);
+  let current = replaceConflictingHeadlineAmount(
+    replaceMalformedFinanceAmountAtoms(
+      replaceSingleConflictingPeriodToken(
+        replaceSingleConflictingPeriodRange(String(text || ""), atoms),
+        atoms
+      ),
+      atoms
+    ),
+    atoms,
+    payload
+  );
   if (payload && hasConflictingFinanceFactAtoms(current, atoms)) {
     current = canonicalFinanceAnswerFromPayload(payload) || current;
   }
   const missing = atoms
     .map((atom) => typeof atom === "string" ? { value: atom, line: atom } : atom)
-    .filter((atom) => atom?.value && atom?.line && !current.includes(atom.value) && !current.includes(atom.line))
+    .filter((atom) => atom?.value && atom?.line && shouldAppendMissingFinanceFactAtom(current, atom))
     .map((atom) => atom.line);
   if (!missing.length) return current;
   const base = current.trimEnd();
   const separator = base ? "\n\n" : "";
   return `${base}${separator}${missing.join("\n")}`;
+}
+
+function shouldAppendMissingFinanceFactAtom(text, atom) {
+  const current = String(text || "");
+  const line = String(atom?.line || "").trim();
+  if (!line) return false;
+  if (/^(期间|口径|金额|来源更新时间)[：:]/.test(line)) {
+    return !current.includes(line);
+  }
+  const value = String(atom?.value || "").trim();
+  return value ? !current.includes(value) && !current.includes(line) : !current.includes(line);
 }
 
 function periodAtomValue(atoms) {
@@ -971,6 +1034,7 @@ function periodAtomValue(atoms) {
     const value = String(typeof atom === "string" ? atom : atom?.value || "").trim();
     const line = String(typeof atom === "string" ? atom : atom?.line || "").trim();
     const candidate = line.startsWith("期间：") ? line.slice("期间：".length).trim() : value;
+    if (/^20\d{2}-\d{2}$/.test(candidate)) return candidate;
     if (/^20\d{2}-\d{2}~20\d{2}-\d{2}$/.test(candidate)) return candidate;
   }
   return "";
@@ -1022,6 +1086,39 @@ function replaceSingleConflictingPeriodRange(text, atoms) {
   return nextText;
 }
 
+function replaceSingleConflictingPeriodToken(text, atoms) {
+  const currentPeriod = periodAtomValue(atoms);
+  if (!/^20\d{2}-\d{2}$/.test(currentPeriod)) return text;
+  const matches = [...String(text || "").matchAll(/20\d{2}-\d{2}/g)].map((match) => match[0]);
+  const uniquePeriods = [...new Set(matches)];
+  const conflicting = uniquePeriods.filter((period) => period !== currentPeriod);
+  if (conflicting.length !== 1 || uniquePeriods.includes(currentPeriod)) return text;
+  return String(text || "").split(conflicting[0]).join(currentPeriod);
+}
+
+function replaceConflictingHeadlineAmount(text, atoms, payload) {
+  const compact = compactFinancePayload(payload);
+  const expectedAmount = amountAtomValue((atoms || []).find((atom) => {
+    const line = String(typeof atom === "string" ? atom : atom?.line || "").trim();
+    return line.startsWith("金额：") || line.startsWith("金额:");
+  }));
+  if (!expectedAmount || !compact?.metric) return text;
+  const label = String(compact.metric || "").trim();
+  const lines = String(text || "").split("\n");
+  const moneyPattern = /[0-9][0-9,]*(?:\.\d+)?(?=\s*(?:万元|万|元))/g;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] || "";
+    if (!line.includes(label)) continue;
+    const matches = [...line.matchAll(moneyPattern)];
+    if (matches.length !== 1 || sameFinanceAmount(matches[0][0], expectedAmount)) continue;
+    const start = matches[0].index ?? -1;
+    if (start < 0) continue;
+    lines[i] = line.slice(0, start) + expectedAmount + line.slice(start + matches[0][0].length);
+    return lines.join("\n");
+  }
+  return text;
+}
+
 function patchAssistantMessageWithFinanceFactAtoms(message, atoms, payload) {
   if (!message || message.role !== "assistant" || hasAssistantToolCalls(message)) return null;
   if (!Array.isArray(atoms) || !atoms.length) return null;
@@ -1062,11 +1159,39 @@ async function financeQuerySystemFactBundle(question) {
   const result = await callFinanceTool("finance-query", { query: question });
   const payload = compactFinancePayload(parseToolResultPayload(result));
   if (!payload || typeof payload !== "object") return { text: "", payload: null };
+  const facts = payload.finance_facts && typeof payload.finance_facts === "object" ? payload.finance_facts : null;
   const lines = [
-    "本次核对结果只供生成最终回复使用；不要展示本段标题、JSON 或字段名，可以基于“当前 finance-query 老板答案”自然改写。",
+    facts
+      ? "本次核对结果只供生成最终回复使用；不要展示本段标题、JSON 或字段名。必须以 FinanceQA 结构化事实包为准自然组织语言。"
+      : "本次核对结果只供生成最终回复使用；不要展示本段标题、JSON 或字段名，可以基于“当前 finance-query 老板答案”自然改写。",
     `最新问题：${question}`
   ];
-  if (payload.final_answer) lines.push(`当前 finance-query 老板答案：${payload.final_answer}`);
+  if (facts) {
+    lines.push("FinanceQA 决定事实，OpenClaw 决定表达。");
+    const factParts = [];
+    for (const [key, label] of [
+      ["schema_version", "schema"],
+      ["resolved_period", "resolved_period"],
+      ["requested_period", "requested_period"],
+      ["basis", "basis"],
+      ["headline_metric", "headline_metric"],
+      ["headline_amount", "headline_amount"]
+    ]) {
+      if (facts[key] !== undefined && facts[key] !== null && facts[key] !== "") {
+        factParts.push(`${label}=${facts[key]}`);
+      }
+    }
+    if (factParts.length) lines.push(`结构化事实包：${factParts.join("；")}`);
+    if (facts.metrics) lines.push(`metrics：${JSON.stringify(facts.metrics)}`);
+    if (Array.isArray(facts.source_tables) && facts.source_tables.length) lines.push(`source_tables：${JSON.stringify(facts.source_tables)}`);
+    if (Array.isArray(facts.source_files) && facts.source_files.length) lines.push(`source_files：${JSON.stringify(facts.source_files)}`);
+    if (Array.isArray(facts.warnings) && facts.warnings.length) lines.push(`warnings：${JSON.stringify(facts.warnings)}`);
+    if (Array.isArray(facts.explanation_hints) && facts.explanation_hints.length) lines.push(`explanation_hints：${JSON.stringify(facts.explanation_hints)}`);
+    if (facts.resolved_period) lines.push(`不得把 resolved_period=${facts.resolved_period} 改成其他月份或相对时间。`);
+    if (facts.basis) lines.push(`不得把 basis=${facts.basis} 改成其他口径。`);
+  } else if (payload.final_answer) {
+    lines.push(`当前 finance-query 老板答案：${payload.final_answer}`);
+  }
   if (payload.metric_label) lines.push(`标准指标标签：${payload.metric_label}`);
   if (payload.business_basis) lines.push(`业务口径：${payload.business_basis}`);
   if (payload.metric) lines.push(`标准指标：${payload.metric}`);

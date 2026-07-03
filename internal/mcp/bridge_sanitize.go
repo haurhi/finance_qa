@@ -32,12 +32,55 @@ func sanitizePayloadMap(in map[string]any) map[string]any {
 		if internalPayloadKeys[key] {
 			continue
 		}
+		if key == "finance_facts" {
+			if facts := mapValue(value); facts != nil {
+				if clean := sanitizeFinanceFactsMap(facts); len(clean) > 0 {
+					out[key] = clean
+				}
+				continue
+			}
+		}
 		clean, keep := sanitizePayloadValue(value)
 		if keep {
 			out[key] = clean
 		}
 	}
 	return out
+}
+
+func sanitizeFinanceFactsMap(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		if key == "source_tables" {
+			tables := []any{}
+			for _, table := range stringSlice(value) {
+				table = safeFinanceFactSourceTable(table)
+				if table != "" {
+					tables = append(tables, table)
+				}
+			}
+			if len(tables) > 0 {
+				out[key] = tables
+			}
+			continue
+		}
+		if internalPayloadKeys[key] {
+			continue
+		}
+		clean, keep := sanitizePayloadValue(value)
+		if keep {
+			out[key] = clean
+		}
+	}
+	return out
+}
+
+func safeFinanceFactSourceTable(value string) string {
+	table := strings.TrimSpace(value)
+	if idx := strings.LastIndex(table, "."); idx >= 0 {
+		table = strings.TrimSpace(table[idx+1:])
+	}
+	return sanitizePayloadString(table)
 }
 
 func sanitizePayloadValue(value any) (any, bool) {

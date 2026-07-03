@@ -33,6 +33,9 @@ func (s *Server) bridgeEnvelope(toolName, operation string, result any) map[stri
 		if supplierSummary := data["host_summary_supplier_payments"]; supplierSummary != nil {
 			payload["host_summary_supplier_payments"] = supplierSummary
 		}
+		if financeFacts := data["finance_facts"]; financeFacts != nil {
+			payload["finance_facts"] = financeFacts
+		}
 	} else if finalAnswer := firstString(payload["final_answer"], payload["boss_reply_text"], payload["message"]); finalAnswer != "" {
 		payload["final_answer"] = finalAnswer
 	}

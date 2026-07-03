@@ -84,8 +84,8 @@ func TestInitializeReportsCurrentMCPServerVersion(t *testing.T) {
 	response := responseByID(t, stdout.String(), float64(1))
 	result := response["result"].(map[string]any)
 	serverInfo := result["serverInfo"].(map[string]any)
-	if got := serverInfo["version"]; got != "2.2.27" {
-		t.Fatalf("MCP server version = %v, want 2.2.27", got)
+	if got := serverInfo["version"]; got != "2.2.28" {
+		t.Fatalf("MCP server version = %v, want 2.2.28", got)
 	}
 }
 
@@ -184,6 +184,54 @@ func TestBridgeEnvelopeFinalAnswerKeepsHumanSourceNotes(t *testing.T) {
 		if strings.Contains(finalAnswer, forbidden) {
 			t.Fatalf("final_answer should hide %q, got %s", forbidden, finalAnswer)
 		}
+	}
+}
+
+func TestBridgeEnvelopeExposesSanitizedFinanceFacts(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer()
+	payload := server.bridgeEnvelope("finance-query", "query", map[string]any{
+		"success": true,
+		"message": "2026-03 账上净利润 291291.55 元。",
+		"data": map[string]any{
+			"finance_facts": map[string]any{
+				"schema_version":     "finance_facts.v1",
+				"resolved_period":    "2026-03",
+				"requested_period":   "最新完整月份",
+				"basis":              "序时账口径",
+				"source_tables":      []any{"tenant_uhub.fin_journal", "fin_income_statement"},
+				"source_files":       []any{"《测试序时账.xls》"},
+				"source_note":        "来源：《测试序时账.xls》",
+				"source_update_note": "来源更新时间：2026-07-01 12:00:00",
+				"metrics":            map[string]any{"账上净利润": 291291.55},
+				"headline_metric":    "账上净利润",
+				"headline_amount":    291291.55,
+				"required_atoms":     []any{"期间：2026-03", "金额：291291.55 元", "来源：《测试序时账.xls》"},
+			},
+			"source_tables": []any{"tenant_uhub.fin_journal"},
+		},
+	})
+
+	facts := mapValue(payload["finance_facts"])
+	if facts == nil {
+		t.Fatalf("top-level finance_facts missing: %#v", payload)
+	}
+	if got := firstString(facts["resolved_period"]); got != "2026-03" {
+		t.Fatalf("finance_facts.resolved_period = %q", got)
+	}
+	if got := stringSlice(facts["source_tables"]); len(got) != 2 || got[0] != "fin_journal" || got[1] != "fin_income_statement" {
+		t.Fatalf("finance_facts.source_tables = %#v", got)
+	}
+	if data := mapValue(payload["data"]); data == nil || data["source_tables"] != nil {
+		t.Fatalf("raw data.source_tables should stay hidden, data=%#v", data)
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	if strings.Contains(string(raw), "tenant_uhub") {
+		t.Fatalf("finance_facts should not leak raw schema-qualified source tables: %s", raw)
 	}
 }
 

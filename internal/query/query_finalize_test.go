@@ -120,7 +120,7 @@ func TestFinalizeQueryResultAppliesPeriodOverrideToBossRewrite(t *testing.T) {
 			"query_spec_overrides": map[string]any{
 				"period_from": "2026-06",
 				"period_to":   "2026-06",
-				"time_scope":   string(TimeScopeMonth),
+				"time_scope":  string(TimeScopeMonth),
 			},
 		},
 	})
@@ -140,5 +140,79 @@ func TestFinalizeQueryResultAppliesPeriodOverrideToBossRewrite(t *testing.T) {
 	}
 	if got := rewrite["period_from"]; got != "2026-06" {
 		t.Fatalf("boss_rewrite.period_from = %v, want actual business period 2026-06", got)
+	}
+}
+
+func TestFinalizeQueryResultBuildsStructuredFinanceFacts(t *testing.T) {
+	ctx := queryExecutionContext{
+		spec: QuerySpec{
+			OriginalQuestion:  "按序时账口径，最新完整月份账上净利润是多少？",
+			QueryFamily:       QueryFamilyCoreMetric,
+			MetricKind:        MetricKindProfit,
+			PeriodFrom:        "2026-04",
+			PeriodTo:          "2026-04",
+			SourceConstraint:  "journal",
+			PerspectivePolicy: PerspectiveAccrualOnly,
+		},
+	}
+
+	res := finalizeQueryResult(ctx, Result{
+		Success: true,
+		Message: "2026-03 账上净利润 291291.55 元。",
+		Data: map[string]any{
+			"period":             "2026-03",
+			"requested_period":   "最新完整月份",
+			"business_basis":     "序时账口径",
+			"metric_label":       "账上净利润",
+			"total":              291291.55,
+			"metrics":            map[string]any{"账上净利润": 291291.55},
+			"source_tables":      []string{"tenant_uhub.fin_journal"},
+			"source_documents":   []string{"《测试序时账.xls》"},
+			"source_note":        "来源：《测试序时账.xls》",
+			"source_update_note": "来源更新时间：2026-07-01 12:00:00",
+			"warnings":           []string{"数据只到 2026-03，2026-04 未入库"},
+			"explanation_hints":  []string{"按序时账本年利润科目取数"},
+		},
+	})
+
+	facts, ok := res.Data["finance_facts"].(map[string]any)
+	if !ok {
+		t.Fatalf("finance_facts missing: %+v", res.Data)
+	}
+	for key, want := range map[string]any{
+		"schema_version":     "finance_facts.v1",
+		"resolved_period":    "2026-03",
+		"requested_period":   "最新完整月份",
+		"basis":              "序时账口径",
+		"headline_metric":    "账上净利润",
+		"headline_amount":    291291.55,
+		"source_note":        "来源：《测试序时账.xls》",
+		"source_update_note": "来源更新时间：2026-07-01 12:00:00",
+	} {
+		if got := facts[key]; got != want {
+			t.Fatalf("finance_facts[%s] = %v, want %v; facts=%+v", key, got, want, facts)
+		}
+	}
+	if got := anySourceStringSlice(facts["source_tables"]); len(got) != 1 || got[0] != "fin_journal" {
+		t.Fatalf("finance_facts.source_tables = %#v, want safe logical table fin_journal", got)
+	}
+	if got := anySourceStringSlice(facts["source_files"]); len(got) != 1 || got[0] != "《测试序时账.xls》" {
+		t.Fatalf("finance_facts.source_files = %#v", got)
+	}
+	metrics, ok := facts["metrics"].(map[string]any)
+	if !ok || metrics["账上净利润"] != 291291.55 {
+		t.Fatalf("finance_facts.metrics = %#v", facts["metrics"])
+	}
+	required := anySourceStringSlice(facts["required_atoms"])
+	for _, want := range []string{
+		"期间：2026-03",
+		"口径：序时账口径",
+		"金额：291291.55 元",
+		"来源：《测试序时账.xls》",
+		"来源更新时间：2026-07-01 12:00:00",
+	} {
+		if !containsString(required, want) {
+			t.Fatalf("required_atoms = %#v, want %q", required, want)
+		}
 	}
 }

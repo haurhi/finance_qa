@@ -26,9 +26,9 @@ OpenClaw extension -> HTTPS /mcp -> FinanceQA host -> financeqa serve-http
 ~/finance_qa/bin/financeqa
 ```
 
-OpenClaw 这层会在 `before_prompt_build` 加强财务题约束。直接财务提问和模型超时后的 `Continue where you left off` fallback 都必须从当前 prompt 或最近 user 历史里恢复最新财务问题，并预先调用 `finance-query` 注入当前 Go MCP 结果上下文。最终回答仍由模型自行组织；只要求关键数值、期间、口径和来源一致，不要求逐字复述或完全一致，也不使用 `before_dispatch` 直接拦截输出。
+OpenClaw 这层会在 `before_prompt_build` 加强财务题约束。直接财务提问和模型超时后的 `Continue where you left off` fallback 都必须从当前 prompt 或最近 user 历史里恢复最新财务问题，并预先调用 `finance-query` 注入当前 Go MCP 结果上下文。若结果含 `finance_facts`，OpenClaw 以结构化事实包为事实源；`final_answer` 只作为兼容老板答案。最终回答仍由模型自行组织；只要求关键数值、期间、口径和来源一致，不要求逐字复述或完全一致，也不使用 `before_dispatch` 直接拦截输出。
 
-为避免模型偶发漏掉老板可见事实，finance extension 还会在 `llm_output` 和 `before_message_write` 做窄范围补强：仅当同一会话刚产生当前 `finance-query` 结果，且最终 assistant 文本缺少或误用期间、口径、金额、来源或来源更新时间等 FinanceQA fact atom 时，修补缺失或冲突的标准事实行。这个逻辑不复制完整 `final_answer`，也不处理其他插件或其他 MCP 的回答。
+为避免模型偶发漏掉老板可见事实，finance extension 还会在 `llm_output` 和 `before_message_write` 做窄范围补强：仅当同一会话刚产生当前 `finance-query` 结果，且最终 assistant 文本缺少或误用期间、口径、金额、来源或来源更新时间等 FinanceQA fact atom 时，修补缺失或冲突的标准事实行。事实原子优先来自 `finance_facts.required_atoms`，没有事实包时才从兼容字段抽取。这个逻辑不复制完整 `final_answer`，也不处理其他插件或其他 MCP 的回答。
 
 ### 1. 直接运行 Go MCP 服务器
 
@@ -72,7 +72,7 @@ token 文件必须由部署环境生成并 `chmod 600`；不要把 token 写入�
         "source": "path",
         "sourcePath": "/root/.openclaw/extensions/openclaw-finance",
         "installPath": "/root/.openclaw/extensions/openclaw-finance",
-        "version": "2.2.27"
+        "version": "2.2.28"
       }
     }
   }
@@ -110,5 +110,5 @@ token 文件必须由部署环境生成并 `chmod 600`；不要把 token 写入�
 ## 兼容性
 
 - Go MCP 工具 payload 保持原 Python bridge 兼容字段
-- `final_answer` 和 `host_summary_contract` 字段已原生支持
+- `finance_facts`、`final_answer` 和 `host_summary_contract` 字段已原生支持
 - 无需 Python 环境依赖
