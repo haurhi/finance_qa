@@ -216,3 +216,40 @@ func TestFinalizeQueryResultBuildsStructuredFinanceFacts(t *testing.T) {
 		}
 	}
 }
+
+func TestFinalizeQueryResultLabelsSourceConstraintBasis(t *testing.T) {
+	ctx := queryExecutionContext{
+		spec: QuerySpec{
+			OriginalQuestion: "按序时账口径，最新完整月份账上净利润是多少？",
+			QueryFamily:      QueryFamilyCoreMetric,
+			MetricKind:       MetricKindProfit,
+			PeriodFrom:       "2026-06",
+			PeriodTo:         "2026-06",
+			SourceConstraint: "journal",
+		},
+	}
+
+	res := finalizeQueryResult(ctx, Result{
+		Success: true,
+		Message: "2026-03 账上净利润 291291.55 元。",
+		Data: map[string]any{
+			"period":        "2026-03",
+			"metric_label":  "账上净利润",
+			"total":         291291.55,
+			"source_tables": []string{"tenant_uhub.fin_journal"},
+			"source_note":   "来源：《测试序时账.xls》",
+		},
+	})
+
+	facts, ok := res.Data["finance_facts"].(map[string]any)
+	if !ok {
+		t.Fatalf("finance_facts missing: %+v", res.Data)
+	}
+	if got := facts["basis"]; got != "序时账口径" {
+		t.Fatalf("finance_facts.basis = %v, want user-facing source constraint label; facts=%+v", got, facts)
+	}
+	required := anySourceStringSlice(facts["required_atoms"])
+	if !containsString(required, "口径：序时账口径") {
+		t.Fatalf("required_atoms = %#v, want user-facing basis atom", required)
+	}
+}

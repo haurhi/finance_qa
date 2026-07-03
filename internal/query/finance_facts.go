@@ -89,11 +89,45 @@ func financeFactBasis(spec QuerySpec, data map[string]any) string {
 		spec.SourceConstraint,
 		data["source_priority"],
 	} {
-		if text := strings.TrimSpace(anyToString(value)); text != "" {
-			return text
+		if label := financeFactBasisLabel(strings.TrimSpace(anyToString(value))); label != "" {
+			return label
 		}
 	}
 	return ""
+}
+
+func financeFactBasisLabel(text string) string {
+	if text == "" {
+		return ""
+	}
+	if containsCJK(text) {
+		return text
+	}
+	switch strings.ToLower(text) {
+	case BossSourceBankStatement, "fin_bank_statement", "explicit_cash":
+		return "银行流水口径"
+	case BossSourceJournal, "fin_journal", "financial_account":
+		return "序时账口径"
+	case BossSourceBalance, "balance_sheet", "fin_balance_sheet", "fin_balance_detail", "official_then_evidence":
+		return "余额表口径"
+	case BossSourceContract, BossSourceContractAggregate, "contract_first", string(BossPerspectiveContractFirst), "contract_strict":
+		return "项目/合同口径"
+	case "accrual_only":
+		return "权责发生制口径"
+	case "cash_then_accrual":
+		return "现金优先、权责补充口径"
+	default:
+		return text
+	}
+}
+
+func containsCJK(text string) bool {
+	for _, r := range text {
+		if r >= '\u4e00' && r <= '\u9fff' {
+			return true
+		}
+	}
+	return false
 }
 
 func financeFactSourceTables(data map[string]any) []string {
