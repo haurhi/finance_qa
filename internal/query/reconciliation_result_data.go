@@ -33,12 +33,13 @@ func buildReconciliationHighlightMaps(highlights []counterpartySnapshot) []map[s
 
 func buildReconciliationResultData(period string, book monthlyBookView, bookSource string, cash *accounting.CashPerspective, highlights []counterpartySnapshot, bridgeMap map[string]any) map[string]any {
 	return map[string]any{
-		"period":        period,
-		"book_view":     book,
-		"cash_view":     cash,
-		"highlights":    buildReconciliationHighlightMaps(highlights),
-		"book_source":   bookSource,
-		"source_tables": sourceTablesForReconciliation(bookSource),
+		"period":         period,
+		"business_basis": "账上利润与银行流水双口径对账",
+		"book_view":      book,
+		"cash_view":      cash,
+		"highlights":     buildReconciliationHighlightMaps(highlights),
+		"book_source":    bookSource,
+		"source_tables":  sourceTablesForReconciliation(bookSource),
 		"dual_perspective": map[string]any{
 			"cash": map[string]any{
 				"说明":   "银行卡上看",

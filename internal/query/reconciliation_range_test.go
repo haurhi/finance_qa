@@ -206,6 +206,13 @@ func TestCompareBookProfitAndBankNetInflowUsesReconciliationRoute(t *testing.T) 
 	if !containsString(sourceTables, "fin_bank_statement") || !containsString(sourceTables, "fin_journal") {
 		t.Fatalf("source_tables = %#v, want both bank and journal sources; data=%+v", sourceTables, res.Data)
 	}
+	facts, ok := res.Data["finance_facts"].(map[string]any)
+	if !ok {
+		t.Fatalf("finance_facts missing: data=%+v", res.Data)
+	}
+	if got := anyToString(facts["basis"]); got != "账上利润与银行流水双口径对账" {
+		t.Fatalf("finance_facts.basis = %q, want reconciliation business basis; facts=%+v data=%+v", got, facts, res.Data)
+	}
 	spec, ok := res.Data["query_spec"].(map[string]any)
 	if !ok || spec["query_family"] != QueryFamilyReconciliation {
 		t.Fatalf("query_spec.query_family = %#v, want reconciliation", spec)
