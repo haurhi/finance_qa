@@ -60,6 +60,8 @@ node examples/golden/financeqa_snapshot_reference.mjs \
 
 Direct `finance-query` remains diagnostic only. It must not be treated as the 90% accuracy reference when `goldenReference` is configured.
 
+The production runner requires a fresh `finance-query` tool call for every FinanceQA case. If OpenClaw answers from session context, skill text, or a `read` call without invoking `finance-query`, the case is marked `required_tool_missing` and counted as runner-invalid rather than a valid business pass.
+
 The same snapshot export also writes dynamic case variables to:
 
 ```bash
@@ -154,6 +156,13 @@ const summary = JSON.parse(fs.readFileSync(path.join(base, latest, "summary.json
 console.log(JSON.stringify({ latest, aggregate: summary.aggregate, failedCases: (summary.failedCases || []).length }, null, 2));
 '
 ```
+
+Interpret the report in layers:
+
+- `accuracy` / `businessAccuracy`: strict all-case metrics; runner-invalid cases count as failures so the headline cannot be inflated by cached answers.
+- `validAccuracy` / `validBusinessAccuracy`: accuracy after excluding runner-invalid cases. Use this to judge FinanceQA/OpenClaw answer quality among cases that actually called the required tool.
+- `failureTypes`: coarse scorer categories such as `agent_changed_amount`, `period_mismatch`, `missing_source`, or `required_tool_missing`.
+- `failureDiagnoses`: narrower evidence labels. For example, `agent_changed_after_direct_tool` means the direct `finance-query` baseline contained the expected amount, but the agent-visible answer did not.
 
 ## Rollback
 

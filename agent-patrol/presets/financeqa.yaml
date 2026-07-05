@@ -342,6 +342,8 @@ targets:
       agent: main
       isolatedSessionPrefix: patrol-finance
       requireSessionIsolation: true
+      requiredTools:
+        - finance-query
       timeoutMs: 360000
     # Optional LLM question rewriter. It only rewrites the natural-language
     # question after deterministic case selection; template/scoring/golden

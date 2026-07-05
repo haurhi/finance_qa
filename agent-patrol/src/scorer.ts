@@ -18,6 +18,7 @@ interface ScoreInput {
   id: string;
   expected: ExpectedRules;
   actual: Partial<AgentEnvelope>;
+  requiredTools?: string[];
   goldenReference?: Partial<ReferenceEnvelope>;
   directToolBaseline?: Partial<ReferenceEnvelope>;
   reference?: Partial<ReferenceEnvelope>;
@@ -26,6 +27,7 @@ interface ScoreInput {
 export interface CaseFailure {
   type: string;
   message: string;
+  diagnosis?: string;
   expected?: unknown;
   actual?: unknown;
   reference?: unknown;
@@ -62,6 +64,16 @@ export function scoreCase(input: ScoreInput): CaseScore {
       actual: input.actual.error
     });
   }
+  const actualToolNames = toolNames(input.actual);
+  for (const requiredTool of input.requiredTools ?? []) {
+    if (!actualToolNames.includes(requiredTool)) {
+      addFailure(failures, failureDetails, `required_tool_missing:${requiredTool}`, "required_tool_missing", {
+        message: `actual agent did not call required tool: ${requiredTool}`,
+        expected: requiredTool,
+        actual: actualToolNames
+      });
+    }
+  }
   if (scoringReference?.source === "golden_reference" && !referenceAnswer) {
     addFailure(failures, failureDetails, "missing_reference:golden_reference", "missing_reference", {
       message: "golden reference is missing, empty, or failed",
@@ -75,8 +87,11 @@ export function scoreCase(input: ScoreInput): CaseScore {
   }
   for (const amount of expected.amounts ?? []) {
     if (!amountPresent(answer, amount.value, amount.label, expected.amountLabelGroups)) {
+      const directAnswer = input.directToolBaseline?.answer;
       const referenceHasAmount = Boolean(referenceAnswer)
         && amountPresent(referenceAnswer, amount.value, amount.label, expected.amountLabelGroups);
+      const directHasAmount = Boolean(directAnswer)
+        && amountPresent(directAnswer!, amount.value, amount.label, expected.amountLabelGroups);
       addFailure(
         failures,
         failureDetails,
@@ -86,9 +101,15 @@ export function scoreCase(input: ScoreInput): CaseScore {
           message: referenceHasAmount
             ? "actual answer does not contain expected amount but reference does"
             : "actual answer does not contain expected amount",
+          diagnosis: diagnoseAmountFailure({
+            referenceHasAmount,
+            directHasAmount,
+            hasDirectBaseline: Boolean(directAnswer),
+            scoringReferenceSource: scoringReference?.source
+          }),
           expected: amount,
           actual: answer,
-          reference: referenceAnswer || undefined
+          reference: referenceAnswer || directAnswer || undefined
         }
       );
     }
@@ -160,7 +181,7 @@ export function scoreCase(input: ScoreInput): CaseScore {
     caseId: input.id,
     pass: failures.length === 0,
     businessPass: failureDetails.every((failure) => !isBusinessBlockingFailure(failure)),
-    invalid: failures.includes("invalid_actual_path"),
+    invalid: failureDetails.some((failure) => failure.type === "invalid_actual_path" || failure.type === "required_tool_missing"),
     failures,
     failureDetails,
     warnings
@@ -173,9 +194,23 @@ function isBusinessBlockingFailure(failure: CaseFailure): boolean {
     || failure.type === "period_mismatch"
     || failure.type === "perspective_mismatch"
     || failure.type === "invalid_actual_path"
+    || failure.type === "required_tool_missing"
     || failure.type === "agent_runner_error"
     || failure.type === "missing_reference"
     || failure.type === "write_tool_called";
+}
+
+function diagnoseAmountFailure(input: {
+  referenceHasAmount: boolean;
+  directHasAmount: boolean;
+  hasDirectBaseline: boolean;
+  scoringReferenceSource?: string;
+}): string | undefined {
+  if (input.directHasAmount) return "agent_changed_after_direct_tool";
+  if (input.referenceHasAmount && input.hasDirectBaseline) return "direct_tool_mismatch_against_reference";
+  if (!input.referenceHasAmount && input.hasDirectBaseline) return "direct_tool_and_reference_missing_amount";
+  if (input.scoringReferenceSource === "golden_reference") return "golden_reference_amount_unverified";
+  return undefined;
 }
 
 function mergeExpectedRules(expected: ExpectedRules, referenceAnswer: string): ExpectedRules {
@@ -203,13 +238,23 @@ function addFailure(
   failureDetails.push({ type, ...detail });
 }
 
+function toolNames(actual: Partial<AgentEnvelope>): string[] {
+  const names = [
+    ...(actual.toolCalls ?? []).map((call) => call.name),
+    ...(actual.sessionEvidence?.toolCalls ?? []).map((call) => call.name),
+    ...(actual.sessionEvidence?.toolResults ?? []).map((result) => result.toolName)
+  ].filter((item): item is string => Boolean(item));
+  return [...new Set(names)];
+}
+
 function amountPresent(answer: string, value: number, label?: string, labelGroups?: string[][]): boolean {
   const variants = amountVariants(value);
   if (label) {
+    const normalizedLabel = normalize(label);
     for (const candidate of amountLabelCandidates(label, labelGroups)) {
       const presence = labeledAmountPresence(answer, candidate, value, variants);
       if (presence === "match") return true;
-      if (presence === "mismatch") return false;
+      if (presence === "mismatch" && normalize(candidate) === normalizedLabel) return false;
     }
   }
   const normalizedAnswer = normalize(answer);

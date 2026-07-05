@@ -56,6 +56,24 @@ targets:
   assert.throws(() => loadConfig(configPath, {}), /bad.*runner/i);
 });
 
+test("loadConfig rejects malformed required runner tools", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-config-"));
+  const configPath = path.join(dir, "patrol.yaml");
+  fs.writeFileSync(configPath, `
+targets:
+  bad:
+    runner:
+      type: openclaw_agent_cli
+      requiredTools: [finance-query, 3]
+    oracle:
+      type: financeqa_readonly
+      mcpUrl: http://127.0.0.1/mcp
+      allowedTools: [finance-query]
+`, "utf8");
+
+  assert.throws(() => loadConfig(configPath, {}), /bad.*requiredTools/i);
+});
+
 test("loadConfig preserves unresolved environment placeholders for offline generation", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-config-"));
   const configPath = path.join(dir, "patrol.yaml");
@@ -188,6 +206,7 @@ test("production FinanceQA preset requires generated questions and golden refere
   const target = config.targets.finance_qa;
   assert.equal(target.questionGenerator?.type, "command");
   assert.match(target.questionGenerator?.command ?? "", /llm_command_rewriter/);
+  assert.deepEqual(target.runner.requiredTools, ["finance-query"]);
   assert.equal(target.goldenReference?.type, "command");
   assert.match(target.goldenReference?.command ?? "", /financeqa_snapshot_reference/);
   assert.deepEqual(target.suites?.daily?.templates?.slice(-4), [

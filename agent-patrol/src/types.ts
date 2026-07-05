@@ -28,6 +28,7 @@ export interface RunnerConfig {
   userId?: string;
   isolatedSessionPrefix?: string;
   requireSessionIsolation?: boolean;
+  requiredTools?: string[];
   disableDelivery?: boolean;
   timeoutMs?: number;
 }

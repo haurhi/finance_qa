@@ -43,8 +43,14 @@ export interface RunSuiteResult {
     total: number;
     passed: number;
     accuracy: number;
+    invalid: number;
+    validTotal: number;
+    validPassed: number;
+    validAccuracy: number;
     businessPassed: number;
     businessAccuracy: number;
+    validBusinessPassed: number;
+    validBusinessAccuracy: number;
     durationMs: number;
     thresholdPassed: boolean;
     businessThresholdPassed: boolean;
@@ -100,6 +106,7 @@ export async function runSuite(config: PatrolConfig, options: RunSuiteOptions): 
       id: patrolCase.id,
       expected: patrolCase.scoring,
       actual,
+      requiredTools: target.runner.requiredTools,
       goldenReference,
       directToolBaseline,
       reference
@@ -187,15 +194,28 @@ function makeSessionId(target: TargetConfig, patrolCase: PatrolCase, seed: strin
 function aggregateScores(scores: CaseScore[], minAccuracy: number, durationMs: number): RunSuiteResult["aggregate"] {
   const total = scores.length;
   const passed = scores.filter((score) => score.pass).length;
+  const invalid = scores.filter((score) => score.invalid).length;
+  const validScores = scores.filter((score) => !score.invalid);
+  const validTotal = validScores.length;
+  const validPassed = validScores.filter((score) => score.pass).length;
   const businessPassed = scores.filter((score) => score.businessPass).length;
+  const validBusinessPassed = validScores.filter((score) => score.businessPass).length;
   const accuracy = total === 0 ? 0 : passed / total;
+  const validAccuracy = validTotal === 0 ? 0 : validPassed / validTotal;
   const businessAccuracy = total === 0 ? 0 : businessPassed / total;
+  const validBusinessAccuracy = validTotal === 0 ? 0 : validBusinessPassed / validTotal;
   return {
     total,
     passed,
     accuracy,
+    invalid,
+    validTotal,
+    validPassed,
+    validAccuracy,
     businessPassed,
     businessAccuracy,
+    validBusinessPassed,
+    validBusinessAccuracy,
     durationMs,
     thresholdPassed: accuracy >= minAccuracy,
     businessThresholdPassed: businessAccuracy >= minAccuracy

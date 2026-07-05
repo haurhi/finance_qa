@@ -127,4 +127,11 @@ function validateTarget(name: string, target: TargetConfig): void {
   if (!Array.isArray(target.oracle.allowedTools) || target.oracle.allowedTools.length === 0) {
     throw new Error(`target ${name} missing oracle allowedTools`);
   }
+  if (target.runner.requiredTools !== undefined && !isNonEmptyStringArray(target.runner.requiredTools)) {
+    throw new Error(`target ${name} runner requiredTools must be a string array`);
+  }
+}
+
+function isNonEmptyStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string" && item.trim() !== "");
 }

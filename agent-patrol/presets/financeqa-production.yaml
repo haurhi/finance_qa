@@ -342,6 +342,8 @@ targets:
       agent: main
       isolatedSessionPrefix: patrol-finance
       requireSessionIsolation: true
+      requiredTools:
+        - finance-query
       timeoutMs: 360000
     questionGenerator:
       type: command

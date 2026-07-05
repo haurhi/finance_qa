@@ -14,6 +14,25 @@ test("scoreCase marks missing actual path invalid", () => {
   assert.match(score.failures.join(" "), /invalid_actual_path/);
 });
 
+test("scoreCase invalidates agent answers that skip required tools", () => {
+  const score = scoreCase({
+    id: "case-required-tool",
+    expected: { mustContain: ["项目应付"] },
+    requiredTools: ["finance-query"],
+    actual: {
+      source: "agent",
+      answer: "项目应付 3,508,687.80 元。",
+      toolCalls: [{ name: "read" }]
+    }
+  } as Parameters<typeof scoreCase>[0] & { requiredTools: string[] });
+
+  assert.equal(score.pass, false);
+  assert.equal(score.businessPass, false);
+  assert.equal(score.invalid, true);
+  assert.deepEqual(score.failures, ["required_tool_missing:finance-query"]);
+  assert.equal(score.failureDetails[0]?.type, "required_tool_missing");
+});
+
 test("scoreCase applies required terms, forbidden terms, amount checks, and write tool guard", () => {
   const score = scoreCase({
     id: "case-2",
@@ -26,6 +45,33 @@ test("scoreCase applies required terms, forbidden terms, amount checks, and writ
       source: "agent",
       answer: "项目口径看，2026-05 应收未收为 12,345.67 元。",
       toolCalls: [{ name: "finance-query" }]
+    }
+  });
+
+  assert.equal(score.pass, true);
+  assert.deepEqual(score.failures, []);
+});
+
+test("scoreCase accepts primary amount after a nearby metric line", () => {
+  const score = scoreCase({
+    id: "case-nearby-amount",
+    expected: {
+      amounts: [{ label: "项目应付", value: 3508687.8 }],
+      amountLabelGroups: [["项目应付", "应付未付", "未付款"]]
+    },
+    actual: {
+      source: "agent",
+      answer: [
+        "截至 2025-10~2026-06，未付款合计如下：",
+        "",
+        "**口径：项目应付（应付未付/未付款）**",
+        "**口径：项目成本口径：项目成本减已付款，表示应付未付/未付款。**",
+        "**金额：3508687.80 元**",
+        "",
+        "| 主体 | 合同/项目 | 未付款 |",
+        "|---|---|---|",
+        "| 南京林悦智能科技有限公司 | 行业商品数据采购合同 | 2,033,383.80 |"
+      ].join("\n")
     }
   });
 
@@ -106,6 +152,33 @@ test("scoreCase detects agent_changed_amount when reference contains expected am
   assert.equal(score.pass, false);
   assert.deepEqual(score.failures, ["missing_amount:应收未收=2185200"]);
   assert.equal(score.failureDetails[0]?.type, "agent_changed_amount");
+});
+
+test("scoreCase diagnoses whether direct baseline already had the expected amount", () => {
+  const score = scoreCase({
+    id: "case-direct-diagnosis",
+    expected: {
+      amounts: [{ label: "项目应付", value: 3508687.8 }]
+    },
+    actual: {
+      source: "agent",
+      answer: "OpenClaw 回答：项目应付 0.00 元。",
+      toolCalls: [{ name: "finance-query" }]
+    },
+    goldenReference: {
+      source: "golden_reference",
+      answer: "DB金标：项目应付 3508687.80 元。"
+    },
+    directToolBaseline: {
+      source: "financeqa_mcp",
+      tool: "finance-query",
+      answer: "Direct baseline：项目应付 3508687.80 元。"
+    }
+  });
+
+  assert.equal(score.pass, false);
+  assert.equal(score.failureDetails[0]?.type, "agent_changed_amount");
+  assert.equal(score.failureDetails[0]?.diagnosis, "agent_changed_after_direct_tool");
 });
 
 test("scoreCase uses golden reference for reference checks and keeps direct baseline diagnostic only", () => {
@@ -491,6 +564,41 @@ test("scoreCase accepts project payable amount stated as unpaid total", () => {
     reference: {
       source: "golden_reference",
       answer: "2025-10~2026-06 DB金标口径先看项目汇总：项目应付 3538259.73 元。"
+    }
+  });
+
+  assert.equal(score.pass, true);
+  assert.deepEqual(score.failures, []);
+});
+
+test("scoreCase does not let alias detail rows hide a correct payable headline amount", () => {
+  const score = scoreCase({
+    id: "case-15a",
+    expected: {
+      amounts: [{ label: "项目应付", value: 3508687.8 }],
+      amountLabelGroups: [["项目应付", "应付未付", "未付款"]]
+    } as any,
+    actual: {
+      source: "agent",
+      answer: [
+        "截至 2025-10~2026-06，未付款合计如下：",
+        "",
+        "**口径：项目应付（应付未付/未付款）**",
+        "**口径：项目成本口径：项目成本减已付款，表示应付未付/未付款，不按收入未回款口径。**",
+        "**金额：3508687.80 元**（即 3508687.8 元）",
+        "",
+        "| 主体 | 合同/项目 | 结算金额 | 已付款 | 未付款 |",
+        "|---|---|---|---|---|",
+        "| 南京林悦智能科技有限公司 | 行业商品数据采购合同 | 3,343,015.18 | 1,309,631.38 | 2,033,383.80 |",
+        "",
+        "南京林悦的未付款占了大头（203万），其次是北京欧特欧的两个合同合计133.75万。",
+        "",
+        "来源：《优集收入、成本计算表 - 上传.xlsx》的【成本-月度结算】"
+      ].join("\n")
+    },
+    reference: {
+      source: "golden_reference",
+      answer: "2025-10~2026-06 DB金标口径先看项目汇总：项目应付 3508687.80 元。"
     }
   });
 

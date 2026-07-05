@@ -13,6 +13,12 @@ interface ReportInput {
     accuracy: number;
     businessPassed?: number;
     businessAccuracy?: number;
+    invalid?: number;
+    validTotal?: number;
+    validPassed?: number;
+    validAccuracy?: number;
+    validBusinessPassed?: number;
+    validBusinessAccuracy?: number;
     durationMs?: number;
     thresholdPassed?: boolean;
     businessThresholdPassed?: boolean;
@@ -71,6 +77,17 @@ function renderSummary(input: ReportInput): string {
     lines.push(`Business Accuracy: ${businessAccuracy}%`);
     lines.push(`Business Passed: ${businessPassed}/${input.aggregate.total}`);
   }
+  if (typeof input.aggregate.invalid === "number") {
+    lines.push(`Runner Invalid: ${input.aggregate.invalid}`);
+  }
+  if (typeof input.aggregate.validAccuracy === "number") {
+    lines.push(`Valid Accuracy: ${(input.aggregate.validAccuracy * 100).toFixed(2)}%`);
+    lines.push(`Valid Passed: ${input.aggregate.validPassed ?? 0}/${input.aggregate.validTotal ?? 0}`);
+  }
+  if (typeof input.aggregate.validBusinessAccuracy === "number") {
+    lines.push(`Valid Business Accuracy: ${(input.aggregate.validBusinessAccuracy * 100).toFixed(2)}%`);
+    lines.push(`Valid Business Passed: ${input.aggregate.validBusinessPassed ?? 0}/${input.aggregate.validTotal ?? 0}`);
+  }
   lines.push("");
   const categoryNames = Object.keys(categoryCounts);
   if (categoryNames.length > 0) {
@@ -86,6 +103,7 @@ function renderSummary(input: ReportInput): string {
       lines.push(`- ${row.caseId}`);
       if (row.failures.length > 0) lines.push(`  - Failures: ${row.failures.join(", ")}`);
       if ((row.failureTypes ?? []).length > 0) lines.push(`  - Failure Types: ${row.failureTypes!.join(", ")}`);
+      if ((row.failureDiagnoses ?? []).length > 0) lines.push(`  - Failure Diagnoses: ${row.failureDiagnoses!.join(", ")}`);
       if ((row.failureCategories ?? []).length > 0) lines.push(`  - Failure Categories: ${row.failureCategories!.join(", ")}`);
       if (row.question) lines.push(`  - Question: ${row.question}`);
       if (row.questionSource) lines.push(`  - Question Source: ${row.questionSource}`);
@@ -122,6 +140,7 @@ function failedCaseRows(input: ReportInput): Array<{
   caseId: string;
   failures: string[];
   failureTypes?: string[];
+  failureDiagnoses?: string[];
   failureCategories?: string[];
   question?: string;
   originalQuestion?: string;
@@ -159,6 +178,8 @@ function failedCaseRows(input: ReportInput): Array<{
     caseId: string;
     failures: string[];
     failureTypes?: string[];
+    failureDiagnoses?: string[];
+    failureCategories?: string[];
     question?: string;
     originalQuestion?: string;
     questionSource?: string;
@@ -188,6 +209,7 @@ function failedCaseRows(input: ReportInput): Array<{
       caseId: string;
       failures: string[];
       failureTypes?: string[];
+      failureDiagnoses?: string[];
       failureCategories?: string[];
       question?: string;
       originalQuestion?: string;
@@ -223,6 +245,8 @@ function failedCaseRows(input: ReportInput): Array<{
     if (row.questionSource === "template") delete row.questionSource;
     const types = failureTypes(score.failureDetails);
     if (types.length > 0) row.failureTypes = types;
+    const diagnoses = failureDiagnoses(score.failureDetails);
+    if (diagnoses.length > 0) row.failureDiagnoses = diagnoses;
     const categories = failureCategories(score.failureDetails);
     if (categories.length > 0) row.failureCategories = categories;
     rows.push(row);
@@ -294,6 +318,13 @@ function failureTypes(value: unknown): string[] {
     .filter((item): item is string => Boolean(item));
 }
 
+function failureDiagnoses(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value
+    .map((item) => stringValue(asRecord(item)?.diagnosis))
+    .filter((item): item is string => Boolean(item)))];
+}
+
 function failureCategories(value: unknown): string[] {
   return [...new Set(failureTypes(value).map(failureCategory))];
 }
@@ -314,7 +345,7 @@ function failureCategory(type: string): string {
   }
   if (type === "missing_source") return "source_evidence";
   if (type === "scorer_term_miss" || type === "forbidden_term") return "format_quality";
-  if (type === "invalid_actual_path" || type === "agent_runner_error") return "runner_health";
+  if (type === "invalid_actual_path" || type === "agent_runner_error" || type === "required_tool_missing") return "runner_health";
   if (type === "missing_reference") return "reference_health";
   if (type.startsWith("question_generator_")) return "question_validity";
   if (type === "write_tool_called") return "safety";

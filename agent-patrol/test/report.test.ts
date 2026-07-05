@@ -384,6 +384,40 @@ test("writeReport separates core accuracy failures from source evidence failures
   assert.deepEqual(summaryJson.failedCases[0].failureCategories, ["core_accuracy", "source_evidence"]);
 });
 
+test("writeReport surfaces failure diagnoses separately from coarse failure types", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-report-diagnoses-"));
+  writeReport(dir, {
+    manifest: { suite: "finance" },
+    cases: [{ id: "finance-case-diagnosis" }],
+    results: [{
+      caseId: "finance-case-diagnosis",
+      question: "项目应付是多少？",
+      actual: {
+        source: "agent",
+        answer: "OpenClaw 回答：项目应付 0.00 元",
+        toolCalls: [{ name: "finance-query" }]
+      }
+    }],
+    scores: [{
+      caseId: "finance-case-diagnosis",
+      pass: false,
+      failures: ["missing_amount:项目应付=3508687.8"],
+      failureDetails: [{
+        type: "agent_changed_amount",
+        diagnosis: "agent_changed_after_direct_tool"
+      }]
+    }],
+    aggregate: { total: 1, passed: 0, accuracy: 0 }
+  });
+
+  const summary = fs.readFileSync(path.join(dir, "summary.md"), "utf8");
+  assert.match(summary, /Failure Diagnoses: agent_changed_after_direct_tool/);
+
+  const summaryJson = JSON.parse(fs.readFileSync(path.join(dir, "summary.json"), "utf8"));
+  assert.deepEqual(summaryJson.failedCases[0].failureTypes, ["agent_changed_amount"]);
+  assert.deepEqual(summaryJson.failedCases[0].failureDiagnoses, ["agent_changed_after_direct_tool"]);
+});
+
 test("writeReport reports business accuracy separately from evidence quality", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-report-business-accuracy-"));
   writeReport(dir, {

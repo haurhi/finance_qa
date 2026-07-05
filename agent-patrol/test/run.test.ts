@@ -123,6 +123,60 @@ test("runSuite captures direct-tool baseline and writes per-case evidence", asyn
   assert.equal(evidenceRows[0].score.pass, true);
 });
 
+test("runSuite treats missing required agent tools as runner-invalid instead of a valid pass", async () => {
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-required-tool-"));
+  const config = {
+    report: { minAccuracy: 0.9 },
+    templates: {
+      payable: {
+        questions: ["老板，列一下2025年到2026年还有未付款的项目和金额。"],
+        scoring: {
+          amounts: [{ label: "项目应付", value: 3508687.8 }],
+          amountLabelGroups: [["项目应付", "应付未付", "未付款"]]
+        }
+      }
+    },
+    targets: {
+      finance_qa: {
+        runner: {
+          type: "command_agent",
+          command: "unused",
+          isolatedSessionPrefix: "patrol-finance",
+          requiredTools: ["finance-query"]
+        },
+        oracle: {
+          type: "financeqa_readonly",
+          mcpUrl: "http://127.0.0.1/mcp",
+          allowedTools: ["finance-query"]
+        },
+        suites: { smoke: { templates: ["payable"], caseCount: 1 } }
+      }
+    }
+  };
+
+  const result = await runSuite(config, {
+    suite: "smoke",
+    seed: "fixed",
+    outDir,
+    executeAgent: async (): Promise<AgentEnvelope> => ({
+      source: "agent",
+      answer: "项目应付 3,508,687.80 元。",
+      toolCalls: []
+    }),
+    executeReference: async () => ({
+      source: "financeqa_mcp",
+      tool: "finance-query",
+      answer: "项目应付 3508687.80 元。"
+    })
+  });
+
+  assert.equal(result.aggregate.passed, 0);
+  assert.equal(result.aggregate.invalid, 1);
+  assert.equal(result.aggregate.validTotal, 0);
+  assert.equal(result.scores[0]?.invalid, true);
+  assert.deepEqual(result.scores[0]?.failures, ["required_tool_missing:finance-query"]);
+});
+
 test("runSuite detects agent mismatch through active reference scoring", async () => {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-reference-driven-"));
   const config = {
