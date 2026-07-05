@@ -587,22 +587,27 @@ function missingProtectedFinanceTerms(protectedQuestion, rawQuestion) {
   return FINANCE_QUERY_PROTECTION_TERMS.filter((term) => protectedText.includes(term) && !rawText.includes(term));
 }
 
+function hasDynamicFinancePeriod(rawText) {
+  return /(最新月份|最新完整月份|最近完整月份|上个完整自然月|上一个完整自然月|上个完整月|上一个完整月|至今|到现在|目前|当前|最新)/.test(userVisibleText(rawText));
+}
+
 function shouldPreferProtectedFinanceQuestion(protectedQuestion, rawQuestion) {
   const protectedText = userVisibleText(protectedQuestion);
   const rawText = userVisibleText(rawQuestion);
   if (!protectedText || !rawText || protectedText === rawText) return false;
   if (!isFinanceQuestion(protectedText) || !isFinanceQuestion(rawText)) return false;
+  if (hasDynamicFinancePeriod(protectedText) && !hasDynamicFinancePeriod(rawText)) return true;
   return missingProtectedFinanceTerms(protectedText, rawText).length > 0;
 }
 
 function financeQuestionForPromptEvent(event) {
-  const latestUserText = latestUserTextFromMessages(event?.messages);
-  if (isFinanceQuestion(latestUserText)) return contextualFinanceQuestion(latestUserText, event?.messages);
   const prompt = userVisibleText(event?.prompt || "");
-  if (isFinanceQuestion(prompt)) return contextualFinanceQuestion(prompt, event?.messages);
+  const latestUserText = latestUserTextFromMessages(event?.messages);
   if (isRetryOrContinuation(prompt) || isRetryOrContinuation(latestUserText)) {
     return latestFinanceQuestionFromMessages(event?.messages);
   }
+  if (isFinanceQuestion(prompt)) return contextualFinanceQuestion(prompt, event?.messages);
+  if (isFinanceQuestion(latestUserText)) return contextualFinanceQuestion(latestUserText, event?.messages);
   return "";
 }
 

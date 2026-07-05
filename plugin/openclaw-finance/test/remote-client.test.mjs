@@ -166,6 +166,35 @@ test("finance-query execute preserves raw user finance question for protected te
   });
 });
 
+test("finance prompt hook prefers current prompt over stale session history", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const sessionKey = "finance-long-session-current-prompt";
+    await hooks.get("before_prompt_build")({
+      sessionKey,
+      prompt: "收入表中最新月份项目结算营收是多少？",
+      messages: [
+        {
+          role: "user",
+          content: [{
+            type: "text",
+            text: "[Sun 2026-07-05 18:20 GMT+8] 按序时账口径，最新完整月份账上净利润是多少？"
+          }]
+        }
+      ]
+    }, { sessionKey });
+
+    assert.equal(toolCalls[0].arguments.query, "收入表中最新月份项目结算营收是多少？");
+
+    await tools.get("finance-query").execute("call-current-prompt", {
+      query: "2026年3月 项目结算营收"
+    });
+
+    assert.equal(toolCalls.at(-1).arguments.query, "收入表中最新月份项目结算营收是多少？");
+    assert.equal(toolCalls.at(-1).arguments.raw_user_query, "收入表中最新月份项目结算营收是多少？");
+  });
+});
+
 test("before_message_write appends missing FinanceQA fact atoms only", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks }) => {
