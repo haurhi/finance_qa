@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"financeqa/internal/db"
 	"financeqa/internal/dimensions"
@@ -60,6 +61,8 @@ func (s *Service) runFinanceQuery(ctx context.Context, args map[string]any) (Too
 	if queryStr == "" {
 		return ToolRunResult{}, &ToolError{Code: -32602, Message: "Missing required argument", Data: "query"}
 	}
+	rawUserQuery, _ := args["raw_user_query"].(string)
+	queryStr = effectiveFinanceQuery(queryStr, rawUserQuery)
 
 	engine, err := query.NewReadOnlyEngine(s.config.DBPath, s.config.Company)
 	if err != nil {
@@ -68,6 +71,70 @@ func (s *Service) runFinanceQuery(ctx context.Context, args map[string]any) (Too
 	defer engine.Close()
 
 	return ToolRunResult{Operation: "query", Payload: engine.Query(queryStr)}, nil
+}
+
+func effectiveFinanceQuery(rewritten, rawUser string) string {
+	queryText := strings.TrimSpace(rewritten)
+	rawText := strings.TrimSpace(rawUser)
+	if rawText == "" || rawText == queryText || !looksLikeFinanceQueryText(rawText) {
+		return queryText
+	}
+	if queryText == "" {
+		return rawText
+	}
+	if missingProtectedFinanceTerms(rawText, queryText) || lostRelativeFinancePeriod(rawText, queryText) {
+		return rawText
+	}
+	return queryText
+}
+
+func looksLikeFinanceQueryText(text string) bool {
+	return containsAnyText(text, []string{
+		"财务", "经营", "合同", "项目", "客户", "供应商",
+		"回款", "收款", "付款", "开票", "发票",
+		"收入", "营收", "成本", "费用", "利润", "净利润",
+		"应收", "应付", "到账", "支出", "现金", "银行", "余额",
+	})
+}
+
+func missingProtectedFinanceTerms(rawUser, rewritten string) bool {
+	for _, term := range []string{
+		"账上", "序时账", "序时帐", "凭证",
+		"科目余额", "资产负债表", "利润表", "余额表",
+		"银行流水", "银行卡", "银行账户", "官方余额表",
+		"财务口径", "项目口径", "合同口径", "项目成本口径",
+		"实际到账", "实际支出", "应收账款", "应付账款",
+	} {
+		if strings.Contains(rawUser, term) && !strings.Contains(rewritten, term) {
+			return true
+		}
+	}
+	return false
+}
+
+func lostRelativeFinancePeriod(rawUser, rewritten string) bool {
+	hasRelative := containsAnyText(rawUser, []string{
+		"上一个完整自然月", "上个完整自然月", "上一个完整月份", "上个完整月份",
+		"最近完整月份", "最新完整月份", "最近月份", "最新月份",
+		"至今", "到现在", "现在", "当前", "目前",
+	})
+	if !hasRelative {
+		return false
+	}
+	return !containsAnyText(rewritten, []string{
+		"上一个完整自然月", "上个完整自然月", "上一个完整月份", "上个完整月份",
+		"最近完整月份", "最新完整月份", "最近月份", "最新月份",
+		"至今", "到现在", "现在", "当前", "目前",
+	})
+}
+
+func containsAnyText(text string, terms []string) bool {
+	for _, term := range terms {
+		if strings.Contains(text, term) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) runFinanceHostData(ctx context.Context, args map[string]any) (ToolRunResult, error) {

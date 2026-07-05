@@ -127,6 +127,37 @@ func TestContractAggregateReceivableOutstandingDoesNotRequireEntity(t *testing.T
 	}
 }
 
+func TestContractAggregateCustomerReceivableUsesEntityHeadlineFacts(t *testing.T) {
+	dbPath := buildContractAggregateAnalysisDB(t)
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.April, 22, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.Query("帮我看下客户甲客户，从2026年1月到2026年3月，项目应收未收合计是多少？")
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["total"]; got != float64(300) {
+		t.Fatalf("total = %v, want customer-scoped receivable 300 instead of company total; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	summary := requireMap(t, res.Data["contract_summary"], "contract_summary")
+	if got := summary["scope"]; got != "entity" {
+		t.Fatalf("contract_summary.scope = %v, want entity; summary=%+v", got, summary)
+	}
+	if got := summary["entity"]; got != "甲客户" {
+		t.Fatalf("contract_summary.entity = %v, want 甲客户; summary=%+v", got, summary)
+	}
+	facts := requireMap(t, res.Data["finance_facts"], "finance_facts")
+	if got := facts["headline_amount"]; got != float64(300) {
+		t.Fatalf("finance_facts.headline_amount = %v, want customer receivable 300; facts=%+v", got, facts)
+	}
+	if got, _ := facts["headline_metric"].(string); !strings.Contains(got, "项目应收") {
+		t.Fatalf("finance_facts.headline_metric = %q, want 项目应收 label; facts=%+v", got, facts)
+	}
+}
+
 func TestContractAggregateCollectionPriorityUsesCustomerOpenRollup(t *testing.T) {
 	dbPath := buildContractAggregateAnalysisDB(t)
 	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.May, 6, 0, 0, 0, 0, time.UTC)))

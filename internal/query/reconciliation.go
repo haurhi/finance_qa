@@ -9,6 +9,11 @@ import (
 )
 
 func shouldUseReconciliation(q string) bool {
+	if containsAny(q, []string{"对比", "比较", "差多少", "相差", "差额"}) &&
+		containsAny(q, []string{"银行", "银行卡", "银行流水", "现金", "现金流", "净流入", "净流出", "净现金流"}) &&
+		containsAny(q, []string{"账上", "账面", "序时账", "会计账", "利润", "净利润", "净利"}) {
+		return true
+	}
 	if containsAny(q, []string{"为什么", "怎么回事", "差异", "原因", "拆开看", "看看具体", "具体差异", "实际利润"}) {
 		return containsAny(q, []string{"利润", "营收", "收入", "销售额", "成本"})
 	}

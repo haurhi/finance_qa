@@ -126,7 +126,7 @@ func asksExplicitAccrualOnlySource(q string) bool {
 		"按会计账口径", "会计账口径",
 		"按利润表口径", "利润表口径",
 		"按凭证口径", "凭证口径",
-	})
+	}) || asksBookOnlyNetProfit(q)
 }
 
 func resolveLegacySourceFallbackStages(ctx queryExecutionContext) []executionStage {

@@ -148,6 +148,24 @@ test("finance-query execute keeps clean tool query after polluted prompt hook", 
   });
 });
 
+test("finance-query execute preserves raw user finance question for protected terms", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const rawUserQuestion = "从账上看，上一个完整月份净利润是多少？";
+    await hooks.get("before_prompt_build")({
+      prompt: rawUserQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: rawUserQuestion }] }]
+    }, { sessionKey: "finance-protected-raw-query" });
+
+    await tools.get("finance-query").execute("call-rewritten-query", {
+      query: "2026-06 净利润"
+    });
+
+    assert.equal(toolCalls.at(-1).arguments.query, rawUserQuestion);
+    assert.equal(toolCalls.at(-1).arguments.raw_user_query, rawUserQuestion);
+  });
+});
+
 test("before_message_write appends missing FinanceQA fact atoms only", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks }) => {
@@ -354,6 +372,69 @@ test("before_message_write appends missing FinanceQA fact atoms only", async () 
     assert.match(staleCorrected.content[0].text, /未付款 137804\.00 元/);
     assert.match(staleCorrected.content[0].text, /来源更新时间：2026-07-01 18:10:42/);
     assert.doesNotMatch(staleCorrected.content[0].text, /final_answer|finance-query|工具返回/);
+
+    const conflictingHeadlineSessionKey = "finance-conflicting-headline-session";
+    beforeWrite({
+      message: {
+        role: "toolResult",
+        toolName: "finance-query",
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: true,
+            data: {
+              period: "2025-10~2026-06",
+              metric_label: "项目应收（应收未收）",
+              total: 367698.75,
+              source_note: "来源：《优集收入、成本计算表 - 上传.xlsx》的【25年Q4收入明细】和【26年Q2收入明细】",
+              source_update_note: "来源更新时间：2026-07-03 18:39:21",
+              contract_summary: {
+                settlement_amount: 367698.75,
+                received_amount: 0,
+                receivable_open_items: [
+                  {
+                    customer_name: "辽宁金程信息科技有限公司",
+                    contract_content: "海外平台商品数据监控合同-A05",
+                    settlement_amount: 210791.4,
+                    received_amount: 0,
+                    unreceived_amount: 210791.4
+                  },
+                  {
+                    customer_name: "四川其妙科技有限公司",
+                    contract_content: "海外平台商品数据监控合同-A05",
+                    settlement_amount: 156907.35,
+                    received_amount: 0,
+                    unreceived_amount: 156907.35
+                  }
+                ]
+              }
+            }
+          })
+        }]
+      }
+    }, { sessionKey: conflictingHeadlineSessionKey });
+    const conflictingHeadlineAnswer = {
+      role: "assistant",
+      content: [{
+        type: "text",
+        text: [
+          "合同关键词为“海外平台商品数据监控合同-A05”的合同，应收未收情况如下：",
+          "",
+          "**项目应收（应收未收）：2717692.45 元**",
+          "",
+          "明细里两家主体合计未回款 367,698.75 元。",
+          "来源：《优集收入、成本计算表 - 上传.xlsx》的【25年Q4收入明细】和【26年Q2收入明细】",
+          "来源更新时间：2026-07-03 18:39:21"
+        ].join("\n")
+      }],
+      stopReason: "stop"
+    };
+    const headlineCorrected = beforeWrite({ message: conflictingHeadlineAnswer }, { sessionKey: conflictingHeadlineSessionKey })?.message;
+    assert.doesNotMatch(headlineCorrected.content[0].text, /2717692\.45/);
+    assert.match(headlineCorrected.content[0].text, /项目应收（应收未收）：367698\.75 元/);
+    assert.match(headlineCorrected.content[0].text, /金额：367698\.75 元/);
+    assert.match(headlineCorrected.content[0].text, /来源更新时间：2026-07-03 18:39:21/);
+    assert.doesNotMatch(headlineCorrected.content[0].text, /final_answer|finance-query|工具返回/);
 
     const nonFinance = {
       role: "assistant",

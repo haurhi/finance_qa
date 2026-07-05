@@ -258,14 +258,18 @@ func TestExplicitJournalNetProfitUsesSingleBookPerspective(t *testing.T) {
 		`CREATE TABLE balance_detail (company TEXT, year INTEGER, period TEXT, account_code TEXT, account_name TEXT, opening_debit REAL, opening_credit REAL, current_debit REAL, current_credit REAL, closing_debit REAL, closing_credit REAL)`,
 		`CREATE TABLE fin_file_mappings (table_type TEXT, period TEXT, company TEXT, storage_key TEXT, file_name TEXT, updated_at TEXT)`,
 		`INSERT INTO income_statement(company, period, item_name, current_amount, cumulative_amount) VALUES
-		 ('测试公司','2026-03','营业收入',1000,1000),
+		 ('测试公司','2026-01','营业收入',20,20),
+		 ('测试公司','2026-01','净利润',20,20),
+		 ('测试公司','2026-03','营业收入',1000,1020),
 		 ('测试公司','2026-03','营业成本',700,700),
 		 ('测试公司','2026-03','所得税费用',8,8),
-		 ('测试公司','2026-03','净利润',292,292)`,
+		 ('测试公司','2026-03','净利润',292,312)`,
 		`INSERT INTO journal(company, period, voucher_date, voucher_no, account_code, account_name, summary, direction, amount, debit_amount, credit_amount, counterparty) VALUES
+		 ('测试公司','2026-01','2026-01-31','记-0000','600101','主营业务收入','确认1月收入','贷',20,0,20,'客户A'),
 		 ('测试公司','2026-03','2026-03-31','记-0001','600101','主营业务收入','确认3月收入','贷',1000,0,1000,'客户A'),
 		 ('测试公司','2026-03','2026-03-31','记-0002','640101','主营业务成本','确认3月成本','借',700,700,0,'供应商A'),
-		 ('测试公司','2026-03','2026-03-31','记-0003','680101','所得税费用','计提所得税','借',8,8,0,'')`,
+		 ('测试公司','2026-03','2026-03-31','记-0003','680101','所得税费用','计提所得税','借',8,8,0,''),
+		 ('测试公司','2026-03','2026-03-31','记-0004','4103','本年利润','本月损益结转','贷',292,0,292,'')`,
 		`INSERT INTO bank_statement(company, transaction_date, credit_amount, debit_amount, counterparty_name, summary)
 		 VALUES ('测试公司','2026-03-31',800,600,'客户A','3月收付')`,
 		`INSERT INTO fin_file_mappings(table_type, period, company, storage_key, file_name, updated_at) VALUES
@@ -287,6 +291,7 @@ func TestExplicitJournalNetProfitUsesSingleBookPerspective(t *testing.T) {
 	for _, question := range []string{
 		"按序时账口径，最新完整月份账上净利润是多少？",
 		"2026年3月 序时账 净利润",
+		"从账上看，上一个完整月份净利润是多少？",
 	} {
 		res := engine.Query(question)
 		if !res.Success {

@@ -50,7 +50,7 @@ func (e *Engine) shouldPrioritizeContractQuery(question, entity string, hasRealE
 	if shouldUseContractAggregateAnalysisQuestion(question, cfg) {
 		return false
 	}
-	if shouldUseCompanyScopeContractAggregate(question) && strings.TrimSpace(entity) == "" && !hasRealEntity {
+	if shouldUseCompanyScopeContractAggregate(question) && strings.TrimSpace(entity) == "" && !hasRealEntity && e.resolveContractSubject(question, entity) == "" {
 		return false
 	}
 	if shouldUseContractDimensionWithConfig(question, cfg) {

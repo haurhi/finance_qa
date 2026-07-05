@@ -90,7 +90,7 @@ type contractAggregatePeriodComparison struct {
 func (e *Engine) collectContractAggregateSummary(spec QuerySpec) (contractAggregateSummary, error) {
 	cfg := e.currentRuleConfig()
 	entity := strings.TrimSpace(spec.Entity)
-	if entity != "" || !shouldUseCompanyScopeContractAggregate(spec.OriginalQuestion) {
+	if e.shouldResolveContractAggregateEntity(spec.OriginalQuestion, entity) {
 		if resolved := e.resolveContractSubject(spec.OriginalQuestion, entity); resolved != "" {
 			entity = resolved
 		}
@@ -236,6 +236,24 @@ func (e *Engine) collectContractAggregateSummary(spec QuerySpec) (contractAggreg
 	return summary, nil
 }
 
+func (e *Engine) shouldResolveContractAggregateEntity(question, entity string) bool {
+	if strings.TrimSpace(entity) != "" {
+		return true
+	}
+	if shouldForceCompanyScopeContractAggregate(question) {
+		return false
+	}
+	if !shouldUseCompanyScopeContractAggregate(question) {
+		return true
+	}
+	if !looksLikeContractCounterpartyOperatingSubject(question) &&
+		!looksLikeSpecificContractDimensionSubject(question) &&
+		!hasContractContentCodeSubject(question) {
+		return false
+	}
+	return e.resolveContractSubject(question, "") != ""
+}
+
 type contractAggregateOpenBucket struct {
 	Name         string
 	PriorLabel   string
@@ -252,7 +270,7 @@ type contractAggregateOpenBucket struct {
 func contractAggregateWantsDetailItems(question string) bool {
 	return containsAny(question, []string{
 		"明细", "列表", "列一下", "有哪些", "哪些", "分别", "拆", "拆分", "构成",
-		"项目和金额", "项目及金额", "项目及对应金额", "对应金额", "金额各是", "金额分别",
+		"各是多少", "各多少", "各是", "项目和金额", "项目及金额", "项目及对应金额", "对应金额", "金额各是", "金额分别",
 	})
 }
 

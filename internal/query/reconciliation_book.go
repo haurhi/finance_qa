@@ -135,16 +135,16 @@ func (e *Engine) monthlyJournalBookSummary(year, month int) (monthlyBookView, st
 	if !e.hasJournalActivityForMonth(year, month) {
 		return monthlyBookView{}, "empty_month", nil
 	}
-	monthly, err := e.calc.ComputeMonthlyFromJournal(e.Company, year, month)
+	is, err := e.calc.ComputeMonthlyIncomeStatement(e.Company, year, month)
 	if err != nil {
 		return monthlyBookView{}, "", err
 	}
-	is, err := e.calc.ComputeIncomeStatement(e.Company, year, month)
-	if err != nil {
-		return monthlyBookView{}, "", err
+	if currentNetProfit, ok := e.monthlyJournalCurrentNetProfit(year, month); ok {
+		is.NetProfit = currentNetProfit
+		is.TotalProfit = round2(currentNetProfit + is.IncomeTax)
 	}
 	return monthlyBookView{
-		Revenue:             monthly.Revenue,
+		Revenue:             is.Revenue,
 		Cost:                is.Cost,
 		TaxSurcharge:        is.TaxSurcharge,
 		SellingExpense:      is.SellingExpense,
@@ -158,6 +158,52 @@ func (e *Engine) monthlyJournalBookSummary(year, month int) (monthlyBookView, st
 		NetProfit:           is.NetProfit,
 		IncomeTax:           is.IncomeTax,
 	}, "journal", nil
+}
+
+func (e *Engine) monthlyJournalCurrentNetProfit(year, month int) (float64, bool) {
+	startDate := fmt.Sprintf("%d-%02d-01", year, month)
+	endDate := monthEndDay(fmt.Sprintf("%d-%02d", year, month))
+	rows, err := e.db.Query(`
+SELECT direction,
+       COALESCE(amount, 0) AS amount,
+       COALESCE(debit_amount, 0) AS debit_amount,
+       COALESCE(credit_amount, 0) AS credit_amount
+FROM journal
+WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')
+  AND DATE(voucher_date) >= DATE(?)
+  AND DATE(voucher_date) <= DATE(?)
+  AND (account_code = '4103' OR account_code LIKE '4103%' OR account_name LIKE '%本年利润%')
+`, e.Company, e.Company, startDate, endDate)
+	if err != nil {
+		return 0, false
+	}
+	defer rows.Close()
+
+	var total float64
+	count := 0
+	for rows.Next() {
+		var direction string
+		var amount, debit, credit float64
+		if scanErr := rows.Scan(&direction, &amount, &debit, &credit); scanErr != nil {
+			continue
+		}
+		count++
+		if debit != 0 || credit != 0 {
+			total += credit - debit
+			continue
+		}
+		if strings.TrimSpace(direction) == "借" {
+			total -= amount
+		} else {
+			total += amount
+		}
+	}
+	if count == 0 {
+		return 0, false
+	}
+	e.calc.ExecutedSQLs = append(e.calc.ExecutedSQLs, "monthlyJournalCurrentNetProfit(journal): SELECT 4103/本年利润 current month debit-credit FROM journal")
+	e.calc.CalculationLogs = append(e.calc.CalculationLogs, fmt.Sprintf("[序时账本年利润] period=%04d-%02d current_net_profit=%.2f", year, month, round2(total)))
+	return round2(total), true
 }
 
 func matchIncomeStatementItem(item string, patterns []string) bool {

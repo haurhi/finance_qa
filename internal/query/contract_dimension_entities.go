@@ -66,9 +66,6 @@ func (e *Engine) resolveContractSubjectCandidates(alias string) []string {
 }
 
 func (e *Engine) resolveContractSubject(question, entity string) string {
-	if strings.TrimSpace(entity) == "" && shouldUseCompanyScopeContractAggregate(question) {
-		return ""
-	}
 	nq := normalizeEntityText(question)
 	if nq != "" {
 		if content := e.resolveExactContractContentMention(question); content != "" {

@@ -116,7 +116,12 @@ func (e *Engine) queryAccrualProfitOnly(from, to string) Result {
 }
 
 func asksExplicitJournalOnlySource(q string) bool {
-	return containsAny(q, []string{"按序时账口径", "序时账口径", "序时帐口径", "序时账", "序时帐", "按凭证口径", "凭证口径"})
+	return containsAny(q, []string{"按序时账口径", "序时账口径", "序时帐口径", "序时账", "序时帐", "按凭证口径", "凭证口径"}) ||
+		asksBookOnlyNetProfit(q)
+}
+
+func asksBookOnlyNetProfit(q string) bool {
+	return strings.Contains(q, "账上") && asksExplicitNetProfit(q)
 }
 
 func buildAccrualCoreMetricResultData(period string, year, month int, bookSource string, requestedMetrics []string, metric string, accountValue, displayedBookProfit float64, book monthlyBookView, cashFlowSummary, bridgeMap map[string]any) map[string]any {

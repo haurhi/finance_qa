@@ -240,7 +240,17 @@ WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')
 func (c *Calculator) ComputeIncomeStatement(company string, year, month int) (*IncomeStatementResult, error) {
 	startDate := fmt.Sprintf("%d-01-01", year)
 	_, endDate := monthDateBounds(year, month)
+	return c.computeIncomeStatementRange(company, fmt.Sprintf("%d-%02d", year, month), startDate, endDate, "计算年度累计利润表 (YTD)")
+}
 
+// ComputeMonthlyIncomeStatement computes the income statement from journal
+// entries for one month only.
+func (c *Calculator) ComputeMonthlyIncomeStatement(company string, year, month int) (*IncomeStatementResult, error) {
+	startDate, endDate := monthDateBounds(year, month)
+	return c.computeIncomeStatementRange(company, fmt.Sprintf("%d-%02d", year, month), startDate, endDate, "计算月度利润表")
+}
+
+func (c *Calculator) computeIncomeStatementRange(company, period, startDate, endDate, traceLabel string) (*IncomeStatementResult, error) {
 	rows, err := c.db.Query(`
 SELECT account_code, direction, COALESCE(amount, 0) as amount
 FROM journal
@@ -255,9 +265,9 @@ WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')
 	defer rows.Close()
 
 	result := &IncomeStatementResult{
-		Period: fmt.Sprintf("%d-%02d", year, month),
+		Period: period,
 	}
-	c.trace("", fmt.Sprintf("计算年度累计利润表 (YTD): 起点 %s, 终点 %s", startDate, endDate))
+	c.trace("", fmt.Sprintf("%s: 起点 %s, 终点 %s", traceLabel, startDate, endDate))
 
 	for rows.Next() {
 		var code, direction string
@@ -271,6 +281,9 @@ WHERE (? LIKE '%' || company || '%' OR company LIKE '%' || ? || '%')
 		if c.Mapper != nil {
 			if mapped, ok := c.Mapper.MapAccount(code, "", "", ""); ok {
 				finalCode = mapped
+				if mapped != code {
+					c.trace("", fmt.Sprintf("  - 科目 %s 匹配到映射规则 -> %s", code, mapped))
+				}
 			}
 		}
 

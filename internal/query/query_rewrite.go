@@ -120,6 +120,8 @@ func detectBossMetricWithConfig(q string, cfg RuleConfig) BossMetric {
 		return BossMetricCashFlow
 	case shouldUseContractMarginAnalysisQuestion(q, cfg):
 		return BossMetricProfit
+	case looksLikeRevenueInvoiceOpenQuestion(q):
+		return BossMetricInvoice
 	case isARAPQuestion(q):
 		return BossMetricARAP
 	case containsAny(q, []string{"回款", "到账", "收款"}):
@@ -237,7 +239,7 @@ func looksLikeBossRewriteNonEntity(entity string) bool {
 	}
 	return containsAny(normalized, []string{
 		"银行卡", "银行", "实际", "到账", "回款", "收款", "付款", "现金", "现金流",
-		"账上", "现在", "当前", "目前", "至今", "到现在", "起至今", "最新", "最新可见月份", "可见月份", "最近完整月份", "还有", "年初", "多了", "少了",
+		"账上", "现在", "当前", "目前", "至今", "到现在", "起至今", "最新", "最新可见月份", "可见月份", "最近完整月份", "最新完整月份", "上一个完整自然月", "上个完整自然月", "完整自然月", "完整月份", "月底", "还有", "年初", "多了", "少了",
 		"老板", "帮我", "查一下", "看下", "看一下",
 		"应收", "应付", "账款", "开票", "收票", "发票", "未付", "未回", "未收",
 		"挂着", "还挂", "挂账", "哪头", "更重",

@@ -1102,8 +1102,8 @@ function replaceConflictingHeadlineAmount(text, atoms, payload) {
     const line = String(typeof atom === "string" ? atom : atom?.line || "").trim();
     return line.startsWith("金额：") || line.startsWith("金额:");
   }));
-  if (!expectedAmount || !compact?.metric) return text;
-  const label = String(compact.metric || "").trim();
+  const label = String(compact?.metric || compact?.metric_label || "").trim();
+  if (!expectedAmount || !label) return text;
   const lines = String(text || "").split("\n");
   const moneyPattern = /[0-9][0-9,]*(?:\.\d+)?(?=\s*(?:万元|万|元))/g;
   for (let i = 0; i < lines.length; i++) {
@@ -1257,7 +1257,11 @@ function createFinanceTool(name, description, parameters) {
       );
       const params = name === "finance-query"
         ? (rawQuery || shouldUseProtectedQuestion
-          ? { ...rawParamsObject, query: shouldUseProtectedQuestion ? protectedQuestion : rawQuery }
+          ? {
+            ...rawParamsObject,
+            query: shouldUseProtectedQuestion ? protectedQuestion : rawQuery,
+            ...(protectedQuestion ? { raw_user_query: protectedQuestion } : {})
+          }
           : rawParams)
         : rawParams;
       return callFinanceTool(name, params);
@@ -1281,6 +1285,10 @@ const plugin = {
           query: {
             type: "string",
             description: "The latest natural-language finance question from the user"
+          },
+          raw_user_query: {
+            type: "string",
+            description: "Original user finance question before agent rewrite; used only to protect intent, period, and source basis"
           }
         },
         required: ["query"]

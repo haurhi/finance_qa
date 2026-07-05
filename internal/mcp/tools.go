@@ -17,6 +17,10 @@ func financeTools() []Tool {
 						"type":        "string",
 						"description": "Natural language query in Chinese, e.g., '2026年3月应收账款有多少' or '金程科技的收入是多少'",
 					},
+					"raw_user_query": map[string]any{
+						"type":        "string",
+						"description": "Original user finance question before agent rewrite; used to protect intent, period, and source basis.",
+					},
 				},
 				"required": []string{"query"},
 			},
