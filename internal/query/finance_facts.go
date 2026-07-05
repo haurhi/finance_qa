@@ -86,10 +86,21 @@ func financeFactBasis(spec QuerySpec, data map[string]any) string {
 		data["business_basis"],
 		data["basis"],
 		data["source_constraint"],
+		data["source"],
+		firstFinanceFactSourceTableBasis(data),
 		spec.SourceConstraint,
 		data["source_priority"],
 	} {
 		if label := financeFactBasisLabel(strings.TrimSpace(anyToString(value))); label != "" {
+			return label
+		}
+	}
+	return ""
+}
+
+func firstFinanceFactSourceTableBasis(data map[string]any) string {
+	for _, table := range financeFactSourceTables(data) {
+		if label := financeFactBasisLabel(table); label != "" {
 			return label
 		}
 	}

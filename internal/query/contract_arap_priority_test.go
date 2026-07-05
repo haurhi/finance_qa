@@ -194,6 +194,13 @@ func TestOfficialBalanceSheetNaturalMonthARAPUsesLatestAvailableBalance(t *testi
 	if got := res.Data["payable_side_total"]; got != float64(10665) {
 		t.Fatalf("payable_side_total = %v, want 10665", got)
 	}
+	facts, ok := res.Data["finance_facts"].(map[string]any)
+	if !ok {
+		t.Fatalf("finance_facts missing: %+v", res.Data)
+	}
+	if got := facts["basis"]; got != "余额表口径" {
+		t.Fatalf("finance_facts.basis = %v, want 余额表口径; facts=%+v data=%+v", got, facts, res.Data)
+	}
 	if !strings.Contains(res.Message, "账上挂账") || !strings.Contains(res.Message, "应收账款") || !strings.Contains(res.Message, "应付端") {
 		t.Fatalf("message should answer official balance AR/AP hanging status, got %q", res.Message)
 	}
