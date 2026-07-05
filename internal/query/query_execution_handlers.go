@@ -31,6 +31,10 @@ func executionStageHandlers() map[executionStage]executionStageHandler {
 			result := e.queryAccrualCoreMetricWithCoverage(ctx.q, ctx.from, ctx.to)
 			return result, result.Success
 		},
+		executionStageDirectARAP: func(e *Engine, ctx queryExecutionContext) (Result, bool) {
+			result := e.queryARAP(ctx.q, ctx.entity, ctx.from, ctx.to)
+			return result, result.Success
+		},
 		executionStageDirectContractDimension: func(e *Engine, ctx queryExecutionContext) (Result, bool) {
 			result := e.queryContractDimension(ctx.q, ctx.entity, ctx.anchor)
 			return result, result.Success

@@ -752,6 +752,20 @@ VALUES ('C-JUN-001','2026-06','contract_fund_income','26年Q2收入明细',300,1
 	if strings.Contains(res.Message, "账务数据仅到") || strings.Contains(res.Message, "银行卡") {
 		t.Fatalf("project settlement revenue should not answer account/cash reconciliation, got: %s", res.Message)
 	}
+
+	res = engine.Query("收入表中最新月份项目结算营收是多少？")
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["period"]; got != "2026-06" {
+		t.Fatalf("period = %v, want 2026-06 for explicit revenue-table project settlement; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := res.Data["total"]; got != float64(300) {
+		t.Fatalf("total = %v, want project settlement revenue 300; data=%+v", got, res.Data)
+	}
+	if strings.Contains(res.Message, "账务数据仅到") || strings.Contains(res.Message, "银行卡") || strings.Contains(res.Message, "营业收入") {
+		t.Fatalf("explicit revenue-table project settlement should not answer account/cash reconciliation, got: %s", res.Message)
+	}
 }
 
 func buildQueryContextResolutionDB(t *testing.T) string {

@@ -58,6 +58,9 @@ func resolveSourceExecutionStages(ctx queryExecutionContext) []executionStage {
 	if shouldUseDirectAccrualCoreMetric(ctx) {
 		builder.add(executionStageDirectAccrualCoreMetric)
 	}
+	if ctx.spec.QueryFamily == QueryFamilyARAP {
+		builder.add(executionStageDirectARAP)
+	}
 	if shouldUseOrchestratorForSpec(ctx.spec) {
 		builder.add(executionStageOrchestrator)
 	}

@@ -173,6 +173,32 @@ func TestHangingReceivablePayableWithoutProjectDataFallsBackToOfficialBalances(t
 	}
 }
 
+func TestOfficialBalanceSheetNaturalMonthARAPUsesLatestAvailableBalance(t *testing.T) {
+	dbPath := buildOfficialOnlyARAPDB(t)
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.Query("官方余额表里上个完整自然月应收应付挂账情况怎么样？")
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["period"]; got != "2026-03" {
+		t.Fatalf("period = %v, want latest available balance period 2026-03; data=%+v", got, res.Data)
+	}
+	if got := res.Data["source"]; got != "balance_sheet" {
+		t.Fatalf("source = %v, want balance_sheet; data=%+v message=%s", got, res.Data, res.Message)
+	}
+	if got := res.Data["payable_side_total"]; got != float64(10665) {
+		t.Fatalf("payable_side_total = %v, want 10665", got)
+	}
+	if !strings.Contains(res.Message, "账上挂账") || !strings.Contains(res.Message, "应收账款") || !strings.Contains(res.Message, "应付端") {
+		t.Fatalf("message should answer official balance AR/AP hanging status, got %q", res.Message)
+	}
+}
+
 func TestGenericPayableQuestionUsesContractAggregateBeforeBalanceSheet(t *testing.T) {
 	dbPath := buildContractARAPPriorityDB(t)
 	engine, err := NewEngine(dbPath, "测试公司")

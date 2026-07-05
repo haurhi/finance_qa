@@ -8,6 +8,7 @@ func TestExecutionStageHandlersCoverOperationalAndSourceStages(t *testing.T) {
 		executionStageHRBreakdown,
 		executionStageOrchestrator,
 		executionStageDirectAccrualCoreMetric,
+		executionStageDirectARAP,
 		executionStageDirectContractDimension,
 		executionStageDirectCoreMetricRange,
 		executionStageDirectSupplierPayments,
