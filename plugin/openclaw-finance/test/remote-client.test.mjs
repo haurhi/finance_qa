@@ -188,6 +188,36 @@ test("finance-query execute keeps rewritten entity hints while protecting dynami
   });
 });
 
+test("finance prompt hook extracts original question from patrol wrapper", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const rawUserQuestion = "按项目应收口径，2025年10月到上个完整自然月月底未回款合计多少？";
+    const patrolPrompt = [
+      "[巡检要求]",
+      "这是一条只读巡检请求。回答前必须先调用 `finance-query` 获取最新事实；不要使用记忆、历史会话、已有上下文或猜测直接作答。",
+      "",
+      "[用户原问题]",
+      rawUserQuestion
+    ].join("\n");
+    await hooks.get("before_prompt_build")({
+      prompt: patrolPrompt,
+      messages: [{ role: "user", content: [{ type: "text", text: patrolPrompt }] }]
+    }, { sessionKey: "finance-patrol-original-question" });
+
+    assert.equal(toolCalls[0].arguments.query, rawUserQuestion);
+    assert.doesNotMatch(toolCalls[0].arguments.query, /巡检要求|只读巡检请求/);
+
+    await tools.get("finance-query").execute("call-rewritten-patrol-query", {
+      query: "按项目应收口径，2025年10月到2026年6月底未回款合计多少？"
+    });
+
+    const args = toolCalls.at(-1).arguments;
+    assert.equal(args.raw_user_query, rawUserQuestion);
+    assert.match(args.query, /上个完整自然月/);
+    assert.doesNotMatch(args.query, /巡检要求|只读巡检请求|2026年6月|2026-06/);
+  });
+});
+
 test("finance prompt hook prefers current prompt over stale session history", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
@@ -734,6 +764,53 @@ test("before_message_write appends cash flow amount from structured payload", as
     };
     const patched = beforeWrite({ message: missingAmount }, { sessionKey })?.message;
     assert.match(patched.content[0].text, /金额：-633859\.33 元/);
+  });
+});
+
+test("llm_output patches runner payload text with missing FinanceQA atoms", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks }) => {
+    const beforeWrite = hooks.get("before_message_write");
+    const llmOutput = hooks.get("llm_output");
+    const sessionKey = "finance-runner-payload-source-session";
+    beforeWrite({
+      message: {
+        role: "toolResult",
+        toolName: "finance-query",
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: true,
+            finance_facts: {
+              schema_version: "finance_facts.v1",
+              resolved_period: "2026-03",
+              basis: "银行流水口径",
+              headline_metric: "净现金流",
+              headline_amount: -633859.33,
+              source_note: "来源：《交易查询，20260101-20260331，共143笔.xlsx》",
+              source_update_note: "来源更新时间：2026-04-27 13:33:40",
+              required_atoms: [
+                "期间：2026-03",
+                "口径：银行流水口径",
+                "金额：-633859.33 元",
+                "来源：《交易查询，20260101-20260331，共143笔.xlsx》",
+                "来源更新时间：2026-04-27 13:33:40"
+              ]
+            }
+          })
+        }]
+      }
+    }, { sessionKey });
+
+    const event = {
+      payloads: [{
+        text: "2026-03 银行卡净现金流为 **-633,859.33 元**（银行流水口径）。"
+      }]
+    };
+    llmOutput(event, { sessionKey });
+
+    assert.match(event.payloads[0].text, /来源：《交易查询，20260101-20260331，共143笔\.xlsx》/);
+    assert.match(event.payloads[0].text, /来源更新时间：2026-04-27 13:33:40/);
   });
 });
 

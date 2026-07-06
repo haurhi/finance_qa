@@ -52,6 +52,30 @@ func TestEffectiveFinanceQueryProtectsDynamicPeriodAndKeepsEntityHints(t *testin
 	}
 }
 
+func TestEffectiveFinanceQueryExtractsWrappedOriginalQuestion(t *testing.T) {
+	t.Parallel()
+
+	raw := `[巡检要求]
+这是一条只读巡检请求。回答前必须先调用 finance-query 获取最新事实。
+
+[用户原问题]
+按项目应收口径，2025年10月到上个完整自然月月底未回款合计多少？`
+	rewritten := "按项目应收口径，2025年10月到2026年6月底未回款合计多少？"
+
+	got := effectiveFinanceQuery(rewritten, raw)
+
+	for _, want := range []string{"按项目应收口径", "上个完整自然月", "未回款合计"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("effectiveFinanceQuery should preserve original question term %q, got %q", want, got)
+		}
+	}
+	for _, forbidden := range []string{"巡检要求", "只读巡检请求", "2026年6月", "2026-06"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("effectiveFinanceQuery should remove wrapper/fixed period %q, got %q", forbidden, got)
+		}
+	}
+}
+
 func TestEffectiveFinanceQueryKeepsDynamicPeriodForSourceSpecificResolution(t *testing.T) {
 	t.Parallel()
 

@@ -160,25 +160,26 @@ metadata:
 
 ## 4. 宿主不能自己改写的结构化约束
 
-1. `final_answer` / `boss_reply_text` 是后端已整理好的老板可见最终答案，宿主必须保留其中的关键数值、期间、业务口径和来源说明；周边措辞可以重写，但不得二次改口径或重算金额。
-2. `boss_reply` 是后端已整理好的老板口径，不要再从 `executed_sql`、`calculation_logs`、`evidence` 里二次拼数。
-3. `host_summary_contract` 出现时，必须按其字段回答，不允许自行改写成别的时间口径。
-4. `host_summary_supplier_payments` 出现时，必须按其结构化字段回答供应商付款问题，不允许绕开它重新按名称猜供应商、或把被剔除对象重新算回去。
-5. `data.route_decision` 出现时，必须承认后端已经做过来源选择和数据覆盖探测；不要绕开它自行把银行流水、序时账或合同表重新排序成另一套主口径。
-6. 对“累计回款 + 子期间到账”类问题：
+1. `finance_facts` / `data.finance_facts` 是事实优先级最高的结构化事实包；若存在，宿主必须以其中的关键数值、期间、业务口径和来源说明组织老板可见回答。
+2. `final_answer` / `boss_reply_text` 是兼容老板可见答案；仅在没有 `finance_facts` 时作为事实锚点。宿主可以重写周边措辞，但不得二次改口径、改金额、改期间或改来源。
+3. `boss_reply` 是后端已整理好的老板口径，不要再从 `executed_sql`、`calculation_logs`、`evidence` 里二次拼数。
+4. `host_summary_contract` 出现时，必须按其字段回答，不允许自行改写成别的时间口径。
+5. `host_summary_supplier_payments` 出现时，必须按其结构化字段回答供应商付款问题，不允许绕开它重新按名称猜供应商、或把被剔除对象重新算回去。
+6. `data.route_decision` 出现时，必须承认后端已经做过来源选择和数据覆盖探测；不要绕开它自行把银行流水、序时账或合同表重新排序成另一套主口径。
+7. 对“累计回款 + 子期间到账”类问题：
    - `total_amount` 是累计值
    - `sub_period_amount` 是子期间值
    - 不能把 `sub_period_receipts` 当累计值
    - 不能把“其中 3 月到账”改写成“全部在 3 月到账”
-7. CLI 非 0 退出码不等于没有结果：
+8. CLI 非 0 退出码不等于没有结果：
    - 必须优先解析 `stdout` JSON
    - 再看 exit code
-8. 若存在 `data.contract_fallback_reason`：
+9. 若存在 `data.contract_fallback_reason`：
    - 说明系统已先尝试合同/项目口径，但合同台账当前不能直接回答
    - 若同时存在 `data.contract_answer_status=missing` 或 `data.source_priority=contract_strict`，表示系统已阻断自动回退；宿主只能说明合同口径缺口，不能自行改用财务账/流水下结论
    - 若同时存在 `data.contract_continuity_candidates`，这些是“历史同名合同/项目在当前期间挂到其他主体”的候选证据；宿主可以据此做疑似连续性推断，但必须说明不是固定主体映射
    - 只有当后端明确返回 `data.contract_fallback_target` 时，才可说明已经切换到对应非合同口径；这类受控回退只适用于已由数据库候选确认真实主体的金额、付款、回款、应收、应付类问题，不适用于整公司核心汇总或合同/发票 PDF 原文问题
-9. 若存在 `data.extraction_errors`：
+10. 若存在 `data.extraction_errors`：
    - 说明 `finance-host-data` 或自动 fallback 的宿主数据包提取不完整
    - 宿主不能把 `data.llm_payload` 视为完整证据继续生成确定性结论
 

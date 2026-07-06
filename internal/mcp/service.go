@@ -88,10 +88,12 @@ func (s *Service) RunTool(ctx context.Context, name string, args map[string]any)
 
 func (s *Service) runFinanceQuery(ctx context.Context, args map[string]any) (ToolRunResult, error) {
 	queryStr, _ := args["query"].(string)
+	queryStr = financeUserQuestionBlock(queryStr)
 	if queryStr == "" {
 		return ToolRunResult{}, &ToolError{Code: -32602, Message: "Missing required argument", Data: "query"}
 	}
 	rawUserQuery, _ := args["raw_user_query"].(string)
+	rawUserQuery = financeUserQuestionBlock(rawUserQuery)
 	queryStr = effectiveFinanceQuery(queryStr, rawUserQuery)
 
 	engine, err := query.NewReadOnlyEngine(s.config.DBPath, s.config.Company)
@@ -104,8 +106,8 @@ func (s *Service) runFinanceQuery(ctx context.Context, args map[string]any) (Too
 }
 
 func effectiveFinanceQuery(rewritten, rawUser string) string {
-	queryText := strings.TrimSpace(rewritten)
-	rawText := strings.TrimSpace(rawUser)
+	queryText := strings.TrimSpace(financeUserQuestionBlock(rewritten))
+	rawText := strings.TrimSpace(financeUserQuestionBlock(rawUser))
 	if rawText == "" || rawText == queryText || !looksLikeFinanceQueryText(rawText) {
 		return queryText
 	}
@@ -116,6 +118,38 @@ func effectiveFinanceQuery(rewritten, rawUser string) string {
 		return mergeProtectedFinanceQuery(rawText, queryText)
 	}
 	return queryText
+}
+
+func financeUserQuestionBlock(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return ""
+	}
+	type marker struct {
+		token string
+	}
+	markers := []marker{
+		{token: "[用户原问题]"},
+		{token: "【用户原问题】"},
+		{token: "用户原问题："},
+		{token: "用户原问题:"},
+	}
+	bestIndex := -1
+	bestToken := ""
+	for _, marker := range markers {
+		if idx := strings.LastIndex(trimmed, marker.token); idx > bestIndex {
+			bestIndex = idx
+			bestToken = marker.token
+		}
+	}
+	if bestIndex < 0 {
+		return trimmed
+	}
+	candidate := strings.TrimSpace(trimmed[bestIndex+len(bestToken):])
+	if candidate == "" {
+		return trimmed
+	}
+	return candidate
 }
 
 func looksLikeFinanceQueryText(text string) bool {

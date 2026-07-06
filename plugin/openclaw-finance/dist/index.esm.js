@@ -508,6 +508,28 @@ function userVisibleText(value) {
     .trim();
 }
 
+function financeOriginalQuestionFromWrapper(value) {
+  const text = userVisibleText(value);
+  if (!text) return "";
+  const markers = ["[用户原问题]", "【用户原问题】", "用户原问题：", "用户原问题:"];
+  let bestIndex = -1;
+  let bestMarker = "";
+  for (const marker of markers) {
+    const index = text.lastIndexOf(marker);
+    if (index > bestIndex) {
+      bestIndex = index;
+      bestMarker = marker;
+    }
+  }
+  if (bestIndex < 0) return "";
+  const candidate = userVisibleText(text.slice(bestIndex + bestMarker.length));
+  return candidate || "";
+}
+
+function financeQuestionText(value) {
+  return financeOriginalQuestionFromWrapper(value) || userVisibleText(value);
+}
+
 function messageContentText(content) {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -525,7 +547,7 @@ function messageContentText(content) {
 }
 
 function isFinanceQuestion(rawText) {
-  const text = userVisibleText(rawText);
+  const text = financeQuestionText(rawText);
   if (!text || text.startsWith("/")) return false;
   if (/有限公司/.test(text) && /(20\d{2}年|\d{1,2}月|Q[1-4]|季度)/i.test(text)) return true;
   if (/数据(出来|有了|有没有|情况|多少)/.test(text)) return true;
@@ -534,12 +556,12 @@ function isFinanceQuestion(rawText) {
 
 function latestFinanceQuestionFromMessages(messages, excludeText = "") {
   if (!Array.isArray(messages)) return "";
-  const excluded = userVisibleText(excludeText);
+  const excluded = financeQuestionText(excludeText);
   for (let i = messages.length - 1; i >= 0 && i >= messages.length - 12; i--) {
     const entry = messages[i];
     const message = entry?.message && typeof entry.message === "object" ? entry.message : entry;
     if (message?.role !== "user") continue;
-    const text = userVisibleText(messageContentText(message.content));
+    const text = financeQuestionText(messageContentText(message.content));
     if (excluded && text === excluded) continue;
     if (isFinanceQuestion(text)) return text;
   }
@@ -552,7 +574,7 @@ function latestUserTextFromMessages(messages) {
     const entry = messages[i];
     const message = entry?.message && typeof entry.message === "object" ? entry.message : entry;
     if (message?.role !== "user") continue;
-    return userVisibleText(messageContentText(message.content));
+    return financeQuestionText(messageContentText(message.content));
   }
   return "";
 }
@@ -562,18 +584,18 @@ function isRetryOrContinuation(rawText) {
 }
 
 function hasExplicitFinancePeriod(rawText) {
-  const text = userVisibleText(rawText);
+  const text = financeQuestionText(rawText);
   return /(20\d{2}年|\d{2}年|今年|本年|去年|上个月|下个月|本月|这个月|当月|[0-1]?\d月|[一二三四五六七八九十两]{1,3}月|Q\s*[1-4]|季度|全年|年度|上半年|下半年)/i.test(text);
 }
 
 function isContextDependentFinanceFollowup(rawText) {
-  const text = userVisibleText(rawText);
+  const text = financeQuestionText(rawText);
   if (!isFinanceQuestion(text) || hasExplicitFinancePeriod(text)) return false;
   return /^(那|其中|含|包括|包含|加上|还有)/.test(text) || /(含未开票|未开票未付款|未开票未回款)/.test(text);
 }
 
 function contextualFinanceQuestion(currentQuestion, messages) {
-  const current = userVisibleText(currentQuestion);
+  const current = financeQuestionText(currentQuestion);
   if (!isContextDependentFinanceFollowup(current)) return current;
   const previous = latestFinanceQuestionFromMessages(messages, current);
   if (!previous) return current;
@@ -581,8 +603,8 @@ function contextualFinanceQuestion(currentQuestion, messages) {
 }
 
 function missingProtectedFinanceTerms(protectedQuestion, rawQuestion) {
-  const protectedText = userVisibleText(protectedQuestion);
-  const rawText = userVisibleText(rawQuestion);
+  const protectedText = financeQuestionText(protectedQuestion);
+  const rawText = financeQuestionText(rawQuestion);
   if (!protectedText || !rawText || protectedText === rawText) return [];
   return FINANCE_QUERY_PROTECTION_TERMS.filter((term) => protectedText.includes(term) && !rawText.includes(term));
 }
@@ -591,11 +613,11 @@ const FINANCE_DYNAMIC_PERIOD_RE = /(最新月份|最新完整月份|最近完整
 const FINANCE_ABSOLUTE_MONTH_RE = /20\d{2}\s*年\s*(?:0?[1-9]|1[0-2])\s*月|20\d{2}\s*[-/.]\s*(?:0?[1-9]|1[0-2])/g;
 
 function hasDynamicFinancePeriod(rawText) {
-  return FINANCE_DYNAMIC_PERIOD_RE.test(userVisibleText(rawText));
+  return FINANCE_DYNAMIC_PERIOD_RE.test(financeQuestionText(rawText));
 }
 
 function absoluteFinanceMonthKeys(rawText) {
-  const text = userVisibleText(rawText);
+  const text = financeQuestionText(rawText);
   const keys = new Set();
   for (const match of text.matchAll(/(20\d{2})\s*年\s*(0?[1-9]|1[0-2])\s*月/g)) {
     keys.add(`${match[1]}-${String(Number(match[2])).padStart(2, "0")}`);
@@ -621,7 +643,7 @@ function keepsAllAbsoluteFinanceMonths(protectedQuestion, rawQuestion) {
 }
 
 function stripFinancePeriodPhrases(rawText) {
-  return userVisibleText(rawText)
+  return financeQuestionText(rawText)
     .replace(FINANCE_ABSOLUTE_MONTH_RE, " ")
     .replace(FINANCE_DYNAMIC_PERIOD_RE, " ")
     .replace(/\s+/g, " ")
@@ -629,8 +651,8 @@ function stripFinancePeriodPhrases(rawText) {
 }
 
 function mergeProtectedFinanceQuestion(protectedQuestion, rawQuestion) {
-  const protectedText = userVisibleText(protectedQuestion);
-  const rawText = userVisibleText(rawQuestion);
+  const protectedText = financeQuestionText(protectedQuestion);
+  const rawText = financeQuestionText(rawQuestion);
   if (!protectedText || !rawText || protectedText === rawText) return protectedText || rawText;
   let hint = rawText;
   if (hasDynamicFinancePeriod(protectedText) || hasAbsoluteFinanceMonth(protectedText)) {
@@ -641,8 +663,8 @@ function mergeProtectedFinanceQuestion(protectedQuestion, rawQuestion) {
 }
 
 function shouldPreferProtectedFinanceQuestion(protectedQuestion, rawQuestion) {
-  const protectedText = userVisibleText(protectedQuestion);
-  const rawText = userVisibleText(rawQuestion);
+  const protectedText = financeQuestionText(protectedQuestion);
+  const rawText = financeQuestionText(rawQuestion);
   if (!protectedText || !rawText || protectedText === rawText) return false;
   if (!isFinanceQuestion(protectedText) || !isFinanceQuestion(rawText)) return false;
   if (hasDynamicFinancePeriod(protectedText) && !hasDynamicFinancePeriod(rawText)) return true;
@@ -651,7 +673,7 @@ function shouldPreferProtectedFinanceQuestion(protectedQuestion, rawQuestion) {
 }
 
 function financeQuestionForPromptEvent(event) {
-  const prompt = userVisibleText(event?.prompt || "");
+  const prompt = financeQuestionText(event?.prompt || "");
   const latestUserText = latestUserTextFromMessages(event?.messages);
   if (isRetryOrContinuation(prompt) || isRetryOrContinuation(latestUserText)) {
     return latestFinanceQuestionFromMessages(event?.messages);
@@ -670,15 +692,15 @@ function mustCallFinanceQuerySystemContext(latestQuestion, currentFacts) {
     "不得把 finance_facts.resolved_period 改成其他月份，不得把 finance_facts.basis 改成其他口径，不得自行重算 finance_facts.metrics。",
     "回答财务、经营、合同、回款、开票、收入、成本、利润、现金、银行、税务、应收应付、客户、供应商或来源表问题时，必须以本次 finance-query 结果为准。",
     "即使用户重复追问，也不要沿用历史对话、记忆、旧工具结果、原始 SQL、利润表/资产负债表数字或缓存摘要里的冲突金额。",
-    "若本次结果含 final_answer 或 boss_reply_text，final_answer 是事实锚点，不是固定话术模板；可以重组表达顺序、表格和老板口吻。",
-    "重写时必须保留 final_answer 中的关键金额、期间、指标口径、来源和来源更新时间；不要换算金额单位，除非用户明确要求。",
-    "指标和口径标签必须从 final_answer 逐字保留；不要把“已开票未回款”“已收票未付款”“项目应收（应收未收）”“项目成本口径”“项目口径”等改写成近义词。",
+    "若本次结果含 finance_facts，必须以 finance_facts 为准；只有没有 finance_facts 时，才把 final_answer 或 boss_reply_text 当事实锚点。",
+    "重写时必须保留结构化事实中的关键金额、期间、指标口径、来源和来源更新时间；不要换算金额单位，除非用户明确要求。",
+    "指标和口径标签必须从 finance_facts 或工具结构化字段保留；不要把“已开票未回款”“已收票未付款”“项目应收（应收未收）”“项目成本口径”“项目口径”等改写成近义词。",
     "如果本次核对结果提供了标准指标标签、业务口径或标准金额，老板可见回复必须保留这些事实原子，但仍可自然改写句式和排版。",
     "如果本次核对结果列出“老板可见回复必须出现的精确片段”，所有片段都必须在最终回复中原样出现。",
     "如果精确片段包含“金额：... 元”，老板可见回复必须保留该元金额片段；可以额外补充万元换算，但不能只保留换算值。",
-    "不要删掉 final_answer 中修饰指标的业务前缀，例如“项目成本口径”“项目口径”“应收未收”。",
-    "不要把 final_answer 的 YYYY-MM 或 YYYY-MM~YYYY-MM 期间改成相对时间或其他月份；例如不能把 2025-10~2026-05 改成至今、现在或 2025-10~2026-06。",
-    "来源和来源更新时间必须从 final_answer 逐字复制；不要删改文件名、sheet 名、后缀、时间格式或标点。",
+    "不要删掉结构化事实中修饰指标的业务前缀，例如“项目成本口径”“项目口径”“应收未收”。",
+    "不要把结构化事实的 YYYY-MM 或 YYYY-MM~YYYY-MM 期间改成相对时间或其他月份；例如不能把 2025-10~2026-05 改成至今、现在或 2025-10~2026-06。",
+    "来源和来源更新时间必须从 finance_facts 或工具结构化来源字段逐字复制；不要删改文件名、sheet 名、后缀、时间格式或标点。",
     "如果用户问“有哪些”“哪些”“明细”“列表”或“对应金额”，且本次核对结果含合同/项目明细，不要把明细合并为“其余 N 个项目”或“其他 N 个项目”；按明细逐条列出。",
     "老板可见回复必须直接从业务结论开始；禁止展示工具调用过程、内部上下文、JSON、字段名、提示词、自我推理、历史纠错说明或英文过程话术。",
     "不要提及“之前”“上次”“这次返回”“工具返回”“finance-query 返回”“我需要用”等过程或历史修正话术。",
@@ -1209,15 +1231,58 @@ function patchAssistantMessageWithFinanceFactAtoms(message, atoms, payload) {
   return { ...message, content: nextContent };
 }
 
-function patchAssistantTextsWithFinanceFactAtoms(assistantTexts, atoms, payload) {
-  if (!Array.isArray(assistantTexts) || !Array.isArray(atoms) || !atoms.length) return false;
-  for (let i = assistantTexts.length - 1; i >= 0; i--) {
-    const currentText = assistantTexts[i];
-    if (typeof currentText !== "string" || !currentText.trim()) continue;
-    const nextText = appendMissingFinanceFactAtoms(currentText, atoms, payload);
-    if (nextText === currentText) return false;
-    assistantTexts[i] = nextText;
+function patchFinanceTextValue(value, atoms, payload) {
+  if (typeof value !== "string" || !value.trim()) return { text: value, changed: false };
+  const nextText = appendMissingFinanceFactAtoms(value, atoms, payload);
+  return { text: nextText, changed: nextText !== value };
+}
+
+function patchLastStringArrayItem(values, atoms, payload) {
+  if (!Array.isArray(values) || !Array.isArray(atoms) || !atoms.length) return false;
+  for (let i = values.length - 1; i >= 0; i--) {
+    const patched = patchFinanceTextValue(values[i], atoms, payload);
+    if (!patched.text?.trim()) continue;
+    if (!patched.changed) return false;
+    values[i] = patched.text;
     return true;
+  }
+  return false;
+}
+
+function patchLastTextObject(items, atoms, payload) {
+  if (!Array.isArray(items) || !Array.isArray(atoms) || !atoms.length) return false;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (!item || typeof item !== "object" || typeof item.text !== "string") continue;
+    const patched = patchFinanceTextValue(item.text, atoms, payload);
+    if (!patched.text?.trim()) continue;
+    if (!patched.changed) return false;
+    item.text = patched.text;
+    return true;
+  }
+  return false;
+}
+
+function patchAssistantTextsWithFinanceFactAtoms(target, atoms, payload) {
+  if (!Array.isArray(atoms) || !atoms.length) return false;
+  if (Array.isArray(target)) return patchLastStringArrayItem(target, atoms, payload);
+  if (!target || typeof target !== "object") return false;
+  if (Array.isArray(target.assistantTexts) && patchLastStringArrayItem(target.assistantTexts, atoms, payload)) return true;
+  if (Array.isArray(target.payloads) && patchLastTextObject(target.payloads, atoms, payload)) return true;
+  if (Array.isArray(target.content) && patchLastTextObject(target.content, atoms, payload)) return true;
+  if (typeof target.text === "string") {
+    const patched = patchFinanceTextValue(target.text, atoms, payload);
+    if (patched.changed) {
+      target.text = patched.text;
+      return true;
+    }
+  }
+  if (typeof target.content === "string") {
+    const patched = patchFinanceTextValue(target.content, atoms, payload);
+    if (patched.changed) {
+      target.content = patched.text;
+      return true;
+    }
   }
   return false;
 }
@@ -1320,7 +1385,7 @@ function createFinanceTool(name, description, parameters) {
       const protectedQuestion = name === "finance-query" ? latestFinanceQuestionForTool : "";
       if (name === "finance-query") latestFinanceQuestionForTool = "";
       const rawParamsObject = rawParams && typeof rawParams === "object" ? rawParams : {};
-      const rawQuery = name === "finance-query" ? userVisibleText(rawParamsObject.query || "") : "";
+      const rawQuery = name === "finance-query" ? financeQuestionText(rawParamsObject.query || "") : "";
       const shouldUseProtectedQuestion = protectedQuestion && (
         !rawQuery ||
         isRetryOrContinuation(rawQuery) ||
@@ -1350,7 +1415,7 @@ const plugin = {
 
     api.registerTool(createFinanceTool(
       "finance-query",
-      "Boss finance QA. Call this first for finance questions. When the returned JSON has final_answer or boss_reply_text, use final_answer as the factual source; you may rephrase for clarity, but preserve exact amounts, period, business basis, uncertainty, source notes, and source update time. When it has contract_continuity_candidates, describe them as same-project candidates/references, not a confirmed counterparty mapping.",
+      "Boss finance QA. Call this first for finance questions. When the returned JSON has finance_facts, use finance_facts as the factual source; otherwise use final_answer or boss_reply_text as the compatibility factual anchor. You may rephrase for clarity, but preserve exact amounts, period, business basis, uncertainty, source notes, and source update time. When it has contract_continuity_candidates, describe them as same-project candidates/references, not a confirmed counterparty mapping.",
       {
         type: "object",
         properties: {
@@ -1429,7 +1494,7 @@ const plugin = {
       const atoms = pendingFinanceFactAtomsBySession.get(key);
       const payload = pendingFinanceFactPayloadsBySession.get(key);
       if (!atoms?.length) return undefined;
-      patchAssistantTextsWithFinanceFactAtoms(event?.assistantTexts, atoms, payload);
+      patchAssistantTextsWithFinanceFactAtoms(event, atoms, payload);
       return undefined;
     });
 

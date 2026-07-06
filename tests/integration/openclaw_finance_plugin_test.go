@@ -35,11 +35,11 @@ func TestOpenClawFinancePluginLetsModelUseFinanceToolWithoutHardIntercept(t *tes
 		`最新财务问题`,
 		`previous model attempt failed`,
 		`contract_continuity_candidates`,
-		`final_answer 是事实锚点，不是固定话术模板`,
-		`可以重组表达顺序、表格和老板口吻`,
-		`不要把 final_answer 的 YYYY-MM 或 YYYY-MM~YYYY-MM 期间改成相对时间或其他月份`,
-		`来源和来源更新时间必须从 final_answer 逐字复制`,
-		`指标和口径标签必须从 final_answer 逐字保留`,
+		`若本次结果含 finance_facts，必须以 finance_facts 为准`,
+		`只有没有 finance_facts 时，才把 final_answer 或 boss_reply_text 当事实锚点`,
+		`不要把结构化事实的 YYYY-MM 或 YYYY-MM~YYYY-MM 期间改成相对时间或其他月份`,
+		`来源和来源更新时间必须从 finance_facts 或工具结构化来源字段逐字复制`,
+		`指标和口径标签必须从 finance_facts 或工具结构化字段保留`,
 		`same-project candidates/references`,
 		`isFinanceQuestion`,
 		`findFinanceQACwd`,
@@ -131,8 +131,8 @@ func TestOpenClawFinancePluginMetadataUsesCurrentMajorVersion(t *testing.T) {
 		if err := json.Unmarshal(raw, &doc); err != nil {
 			t.Fatalf("parse plugin metadata %s: %v", path, err)
 		}
-		if got := doc["version"]; got != "2.2.37" {
-			t.Fatalf("%s version = %v, want 2.2.37", path, got)
+		if got := doc["version"]; got != "2.2.38" {
+			t.Fatalf("%s version = %v, want 2.2.38", path, got)
 		}
 		if strings.HasSuffix(path, "package.json") {
 			packageDoc = doc
@@ -284,11 +284,11 @@ if (!directHookResult?.prependSystemContext?.includes("FINAL:2026年3月应收�
   console.error("direct finance prompt should inject current finance-query facts into hidden system context:", JSON.stringify(directHookResult));
   process.exit(1);
 }
-if (!directHookResult?.prependSystemContext?.includes("来源和来源更新时间必须从 final_answer 逐字复制")) {
+if (!directHookResult?.prependSystemContext?.includes("来源和来源更新时间必须从 finance_facts 或工具结构化来源字段逐字复制")) {
   console.error("direct finance prompt should tell the model to preserve source lines verbatim:", JSON.stringify(directHookResult));
   process.exit(1);
 }
-if (!directHookResult?.prependSystemContext?.includes("指标和口径标签必须从 final_answer 逐字保留")) {
+if (!directHookResult?.prependSystemContext?.includes("指标和口径标签必须从 finance_facts 或工具结构化字段保留")) {
   console.error("direct finance prompt should tell the model to preserve metric labels verbatim:", JSON.stringify(directHookResult));
   process.exit(1);
 }
@@ -321,19 +321,19 @@ if (!directHookResult?.prependSystemContext?.includes("\"来源：《测试表�
   console.error("direct finance prompt should require source note and update note as boss-visible fact atoms:", JSON.stringify(directHookResult));
   process.exit(1);
 }
-if (!directHookResult?.prependSystemContext?.includes("final_answer 是事实锚点，不是固定话术模板")) {
-  console.error("direct finance prompt should treat final_answer as factual anchor, not a fixed wording template:", JSON.stringify(directHookResult));
+if (!directHookResult?.prependSystemContext?.includes("只有没有 finance_facts 时，才把 final_answer 或 boss_reply_text 当事实锚点")) {
+  console.error("direct finance prompt should use structured facts before final_answer:", JSON.stringify(directHookResult));
   process.exit(1);
 }
-if (!directHookResult?.prependSystemContext?.includes("可以重组表达顺序、表格和老板口吻")) {
+if (!directHookResult?.prependSystemContext?.includes("老板可见回复必须保留这些事实原子，但仍可自然改写句式和排版")) {
   console.error("direct finance prompt should allow flexible wording around protected facts:", JSON.stringify(directHookResult));
   process.exit(1);
 }
-if (!directHookResult?.prependSystemContext?.includes("不要把 final_answer 的 YYYY-MM 或 YYYY-MM~YYYY-MM 期间改成相对时间或其他月份")) {
+if (!directHookResult?.prependSystemContext?.includes("不要把结构化事实的 YYYY-MM 或 YYYY-MM~YYYY-MM 期间改成相对时间或其他月份")) {
   console.error("direct finance prompt should forbid period drift without requiring verbatim final_answer copying:", JSON.stringify(directHookResult));
   process.exit(1);
 }
-if (!directHookResult?.prependSystemContext?.includes("不要删掉 final_answer 中修饰指标的业务前缀，例如“项目成本口径”“项目口径”“应收未收”")) {
+if (!directHookResult?.prependSystemContext?.includes("不要删掉结构化事实中修饰指标的业务前缀，例如“项目成本口径”“项目口径”“应收未收”")) {
   console.error("direct finance prompt should protect business-basis prefixes such as project cost basis:", JSON.stringify(directHookResult));
   process.exit(1);
 }
@@ -341,8 +341,8 @@ if (!directHookResult?.prependSystemContext?.includes("不要提及“之前”�
   console.error("direct finance prompt should forbid process/history repair wording in boss-visible answers:", JSON.stringify(directHookResult));
   process.exit(1);
 }
-if (!tool.description.includes("use final_answer as the factual source")) {
-  console.error("finance-query tool description should preserve facts without forcing exact copying:", tool.description);
+if (!tool.description.includes("finance_facts")) {
+  console.error("finance-query tool description should prioritize structured facts:", tool.description);
   process.exit(1);
 }
 if (tool.description.includes("copy final_answer exactly")) {
