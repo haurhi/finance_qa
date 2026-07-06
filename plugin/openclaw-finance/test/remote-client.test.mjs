@@ -620,20 +620,6 @@ test("prefetched finance facts guard repeated answers that skip a fresh tool cal
     assert.equal(toolCalls[0].arguments.query, "25年至26年未付款的项目及对应金额有哪些？");
     assert.match(promptResult.prependSystemContext, /2025-10~2026-06/);
 
-    const assistantTexts = [
-      [
-        "口径：项目应付（应付未付/未付款）",
-        "金额：1887361.66 元",
-        "来源：《优集收入、成本计算表 - 上传.xlsx》的【成本-月度结算】",
-        "来源更新时间：2026-06-29 20:02:31",
-        "期间：2025-10~2026-05"
-      ].join("\n")
-    ];
-    llmOutput({ assistantTexts }, { sessionKey });
-    assert.match(assistantTexts[0], /期间：2025-10~2026-06/);
-    assert.doesNotMatch(assistantTexts[0], /2025-10~2026-05/);
-    assert.doesNotMatch(assistantTexts[0], /final_answer|finance-query|工具返回/);
-
     const staleRepeatedAnswer = {
       role: "assistant",
       content: [{
@@ -655,6 +641,20 @@ test("prefetched finance facts guard repeated answers that skip a fresh tool cal
     assert.match(patched.content[0].text, /来源：《优集收入、成本计算表 - 上传\.xlsx》的【成本-月度结算】/);
     assert.match(patched.content[0].text, /来源更新时间：2026-06-29 20:02:31/);
     assert.doesNotMatch(patched.content[0].text, /final_answer|finance-query|工具返回/);
+
+    const assistantTexts = [
+      [
+        "口径：项目应付（应付未付/未付款）",
+        "金额：1887361.66 元",
+        "来源：《优集收入、成本计算表 - 上传.xlsx》的【成本-月度结算】",
+        "来源更新时间：2026-06-29 20:02:31",
+        "期间：2025-10~2026-05"
+      ].join("\n")
+    ];
+    llmOutput({ assistantTexts }, { sessionKey });
+    assert.match(assistantTexts[0], /期间：2025-10~2026-06/);
+    assert.doesNotMatch(assistantTexts[0], /2025-10~2026-05/);
+    assert.doesNotMatch(assistantTexts[0], /final_answer|finance-query|工具返回/);
   }, {
     toolPayload: {
       success: true,
@@ -894,6 +894,77 @@ test("llm_output patches runner payload text with missing FinanceQA atoms", asyn
     assert.match(nestedEvent.result.payloads[0].text, /金额：936308\.25 元/);
     assert.match(nestedEvent.result.payloads[0].text, /来源更新时间：2026-07-03 18:39:21/);
     assert.doesNotMatch(nestedEvent.result.payloads[0].text, /final_answer|finance-query|工具返回/);
+  });
+});
+
+test("llm_output still patches stdout after before_message_write patched persisted assistant", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks }) => {
+    const beforeWrite = hooks.get("before_message_write");
+    const llmOutput = hooks.get("llm_output");
+    const sessionKey = "finance-stdout-after-persisted-assistant-session";
+
+    beforeWrite({
+      message: {
+        role: "toolResult",
+        toolName: "finance-query",
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: true,
+            finance_facts: {
+              schema_version: "finance_facts.v1",
+              resolved_period: "2026-06",
+              basis: "项目口径",
+              headline_metric: "项目结算收入（营收）",
+              headline_amount: 936308.25,
+              source_note: "来源：《优集收入、成本计算表 - 上传.xlsx》的【26年Q2收入明细】",
+              source_update_note: "来源更新时间：2026-07-03 18:39:21",
+              required_atoms: [
+                "期间：2026-06",
+                "口径：项目口径",
+                "金额：936308.25 元",
+                "来源：《优集收入、成本计算表 - 上传.xlsx》的【26年Q2收入明细】",
+                "来源更新时间：2026-07-03 18:39:21"
+              ]
+            }
+          })
+        }]
+      }
+    }, { sessionKey });
+
+    const persisted = beforeWrite({
+      message: {
+        role: "assistant",
+        content: [{
+          type: "text",
+          text: "2026年6月，项目结算收入 **93.63万** 元。"
+        }]
+      }
+    }, { sessionKey })?.message;
+
+    assert.match(persisted.content[0].text, /金额：936308\.25 元/);
+
+    const event = {
+      result: {
+        payloads: [{
+          text: "2026年6月，项目结算收入 **93.63万** 元。"
+        }]
+      }
+    };
+    llmOutput(event, { sessionKey });
+
+    assert.match(event.result.payloads[0].text, /金额：936308\.25 元/);
+    assert.match(event.result.payloads[0].text, /来源更新时间：2026-07-03 18:39:21/);
+
+    const nextEvent = {
+      payloads: [{
+        text: "普通非财务回答。"
+      }]
+    };
+    llmOutput(nextEvent, { sessionKey });
+
+    assert.equal(nextEvent.payloads[0].text, "普通非财务回答。");
   });
 });
 

@@ -1530,6 +1530,8 @@ const plugin = {
       const payload = pendingFinanceFactPayloadsBySession.get(key);
       if (!atoms?.length) return undefined;
       patchAssistantTextsWithFinanceFactAtoms(event, atoms, payload);
+      pendingFinanceFactAtomsBySession.delete(key);
+      pendingFinanceFactPayloadsBySession.delete(key);
       return undefined;
     });
 
@@ -1553,8 +1555,6 @@ const plugin = {
       if (!atoms?.length) return undefined;
       const patched = patchAssistantMessageWithFinanceFactAtoms(message, atoms, payload);
       if (!patched) return undefined;
-      pendingFinanceFactAtomsBySession.delete(key);
-      pendingFinanceFactPayloadsBySession.delete(key);
       return { message: patched };
     });
   }
