@@ -809,6 +809,8 @@ test("llm_output patches runner payload text with missing FinanceQA atoms", asyn
     };
     llmOutput(event, { sessionKey });
 
+    assert.match(event.payloads[0].text, /-633,859\.33 元/);
+    assert.doesNotMatch(event.payloads[0].text, /-金额：|金额：-633859\.33 元 元/);
     assert.match(event.payloads[0].text, /来源：《交易查询，20260101-20260331，共143笔\.xlsx》/);
     assert.match(event.payloads[0].text, /来源更新时间：2026-04-27 13:33:40/);
   });

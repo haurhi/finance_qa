@@ -936,7 +936,7 @@ function financeFactAtomSessionKey(event, ctx) {
 function amountAtomValue(atom) {
   const line = String(typeof atom === "string" ? atom : atom?.line || "").trim();
   const value = String(typeof atom === "string" ? atom : atom?.value ?? "").trim();
-  const match = line.match(/^金额[：:]\s*([0-9][0-9,]*(?:\.\d+)?)/);
+  const match = line.match(/^金额[：:]\s*(-?[0-9][0-9,]*(?:\.\d+)?)/);
   return String(match?.[1] || value).replace(/,/g, "").trim();
 }
 
@@ -949,10 +949,10 @@ function hasValidGroupedNumber(raw) {
 
 function replaceMalformedAmountAtom(text, atom) {
   const expectedAmount = amountAtomValue(atom);
-  if (!expectedAmount || !/^[0-9]+(?:\.\d+)?$/.test(expectedAmount)) return text;
+  if (!expectedAmount || !/^-?[0-9]+(?:\.\d+)?$/.test(expectedAmount)) return text;
   if (text.includes(expectedAmount)) return text;
   const lines = String(text || "").split("\n");
-  const moneyPattern = /[0-9][0-9,]*(?:\.\d+)?(?=\s*(?:万元|万|元))/g;
+  const moneyPattern = /-?[0-9][0-9,]*(?:\.\d+)?(?=\s*(?:万元|万|元))/g;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] || "";
     if (!/(合计|总额|金额|项目|应收|应付|未回款|未付款)/.test(line)) continue;
@@ -1199,7 +1199,7 @@ function replaceConflictingHeadlineAmount(text, atoms, payload) {
   const label = String(compact?.metric || compact?.metric_label || "").trim();
   if (!expectedAmount || !label) return text;
   const lines = String(text || "").split("\n");
-  const moneyPattern = /[0-9][0-9,]*(?:\.\d+)?(?=\s*(?:万元|万|元))/g;
+  const moneyPattern = /-?[0-9][0-9,]*(?:\.\d+)?(?=\s*(?:万元|万|元))/g;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] || "";
     if (!line.includes(label)) continue;
