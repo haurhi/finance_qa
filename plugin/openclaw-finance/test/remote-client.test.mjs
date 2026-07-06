@@ -188,6 +188,44 @@ test("finance-query execute keeps rewritten entity hints while protecting dynami
   });
 });
 
+test("finance-query protected question is scoped per OpenClaw session", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const bankQuestion = "银行卡上，上个完整自然月净现金流是多少？";
+    const revenueQuestion = "收入表中上个完整自然月项目结算营收是多少？";
+
+    await hooks.get("before_prompt_build")({
+      prompt: bankQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: bankQuestion }] }]
+    }, { sessionKey: "bank-session" });
+
+    await hooks.get("before_prompt_build")({
+      prompt: revenueQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: revenueQuestion }] }]
+    }, { sessionKey: "revenue-session" });
+
+    await tools.get("finance-query").execute("bank-call", {
+      query: "2026年6月 银行卡 净现金流"
+    }, { sessionKey: "bank-session" });
+
+    const bankArgs = toolCalls.at(-1).arguments;
+    assert.equal(bankArgs.raw_user_query, bankQuestion);
+    assert.match(bankArgs.query, /上个完整自然月/);
+    assert.match(bankArgs.query, /银行卡/);
+    assert.doesNotMatch(bankArgs.query, /2026年6月|项目结算营收/);
+
+    await tools.get("finance-query").execute("revenue-call", {
+      query: "2026年6月 收入表 项目结算营收"
+    }, { sessionKey: "revenue-session" });
+
+    const revenueArgs = toolCalls.at(-1).arguments;
+    assert.equal(revenueArgs.raw_user_query, revenueQuestion);
+    assert.match(revenueArgs.query, /上个完整自然月/);
+    assert.match(revenueArgs.query, /收入表/);
+    assert.doesNotMatch(revenueArgs.query, /银行卡/);
+  });
+});
+
 test("finance prompt hook extracts original question from patrol wrapper", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
@@ -894,7 +932,16 @@ async function withFinancePluginHarness(toolCalls, run, options = {}) {
         };
       },
       registerTool(tool, options) {
-        tools.set(options?.name || tool.name, tool);
+        const name = options?.name || tool.name;
+        if (typeof tool === "function") {
+          tools.set(name, {
+            execute(toolCallId, rawParams, ctx = {}) {
+              return tool(ctx).execute(toolCallId, rawParams, ctx);
+            }
+          });
+          return;
+        }
+        tools.set(name, tool);
       },
       on(name, handler) {
         hooks.set(name, handler);

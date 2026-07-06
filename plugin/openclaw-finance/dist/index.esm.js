@@ -464,6 +464,7 @@ let mcpClient = null;
 let mcpClientKey = "";
 let pluginRuntime = null;
 let latestFinanceQuestionForTool = "";
+const latestFinanceQuestionBySession = new Map();
 const pendingFinanceFactAtomsBySession = new Map();
 const pendingFinanceFactPayloadsBySession = new Map();
 
@@ -933,6 +934,30 @@ function financeFactAtomSessionKey(event, ctx) {
   return String(ctx?.sessionKey || event?.sessionKey || event?.message?.sessionKey || "__default__");
 }
 
+function setLatestFinanceQuestionForToolSession(key, latestQuestion) {
+  const sessionKey = String(key || "__default__");
+  const question = String(latestQuestion || "").trim();
+  if (question) {
+    latestFinanceQuestionBySession.set(sessionKey, question);
+  } else {
+    latestFinanceQuestionBySession.delete(sessionKey);
+  }
+  latestFinanceQuestionForTool = question;
+}
+
+function takeLatestFinanceQuestionForTool(ctx) {
+  const key = financeFactAtomSessionKey(undefined, ctx);
+  if (latestFinanceQuestionBySession.has(key)) {
+    const question = latestFinanceQuestionBySession.get(key) || "";
+    latestFinanceQuestionBySession.delete(key);
+    if (latestFinanceQuestionForTool === question) latestFinanceQuestionForTool = "";
+    return question;
+  }
+  const fallback = latestFinanceQuestionForTool;
+  latestFinanceQuestionForTool = "";
+  return fallback;
+}
+
 function amountAtomValue(atom) {
   const line = String(typeof atom === "string" ? atom : atom?.line || "").trim();
   const value = String(typeof atom === "string" ? atom : atom?.value ?? "").trim();
@@ -1375,15 +1400,14 @@ async function callFinanceTool(name, rawParams) {
   }
 }
 
-function createFinanceTool(name, description, parameters) {
+function createFinanceTool(name, description, parameters, toolCtx) {
   return {
     name,
     label: name,
     description,
     parameters,
-    async execute(_toolCallId, rawParams) {
-      const protectedQuestion = name === "finance-query" ? latestFinanceQuestionForTool : "";
-      if (name === "finance-query") latestFinanceQuestionForTool = "";
+    async execute(_toolCallId, rawParams, runtimeCtx) {
+      const protectedQuestion = name === "finance-query" ? takeLatestFinanceQuestionForTool(runtimeCtx || toolCtx) : "";
       const rawParamsObject = rawParams && typeof rawParams === "object" ? rawParams : {};
       const rawQuery = name === "finance-query" ? financeQuestionText(rawParamsObject.query || "") : "";
       const shouldUseProtectedQuestion = protectedQuestion && (
@@ -1406,6 +1430,16 @@ function createFinanceTool(name, description, parameters) {
   };
 }
 
+function createFinanceToolRegistration(name, description, parameters) {
+  const fallbackTool = createFinanceTool(name, description, parameters);
+  const factory = (ctx) => createFinanceTool(name, description, parameters, ctx);
+  factory.label = fallbackTool.label;
+  factory.description = fallbackTool.description;
+  factory.parameters = fallbackTool.parameters;
+  factory.execute = fallbackTool.execute;
+  return factory;
+}
+
 const plugin = {
   id: PLUGIN_ID,
   name: "Finance",
@@ -1413,7 +1447,7 @@ const plugin = {
   register(api) {
     pluginRuntime = api;
 
-    api.registerTool(createFinanceTool(
+    api.registerTool(createFinanceToolRegistration(
       "finance-query",
       "Boss finance QA. Call this first for finance questions. When the returned JSON has finance_facts, use finance_facts as the factual source; otherwise use final_answer or boss_reply_text as the compatibility factual anchor. You may rephrase for clarity, but preserve exact amounts, period, business basis, uncertainty, source notes, and source update time. When it has contract_continuity_candidates, describe them as same-project candidates/references, not a confirmed counterparty mapping.",
       {
@@ -1432,7 +1466,7 @@ const plugin = {
       }
     ), { name: "finance-query" });
 
-    api.registerTool(createFinanceTool(
+    api.registerTool(createFinanceToolRegistration(
       "finance-upload",
       "Upload and import Excel files (bank statements, journals, balance sheets, contract ledgers, etc.)",
       {
@@ -1447,7 +1481,7 @@ const plugin = {
       }
     ), { name: "finance-upload" });
 
-    api.registerTool(createFinanceTool(
+    api.registerTool(createFinanceToolRegistration(
       "finance-sync",
       "Synchronize a directory of financial Excel files",
       {
@@ -1469,7 +1503,7 @@ const plugin = {
     api.on("before_prompt_build", async (event, ctx) => {
       const key = financeFactAtomSessionKey(event, ctx);
       const latestQuestion = financeQuestionForPromptEvent(event);
-      latestFinanceQuestionForTool = latestQuestion || "";
+      setLatestFinanceQuestionForToolSession(key, latestQuestion || "");
       if (!latestQuestion) {
         pendingFinanceFactAtomsBySession.delete(key);
         pendingFinanceFactPayloadsBySession.delete(key);
