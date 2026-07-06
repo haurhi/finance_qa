@@ -47,5 +47,5 @@ func shouldUseLatestRevenueContractAggregate(q string, cfg RuleConfig) bool {
 	if !containsAny(q, cfg.MetricKeywords(metricKeyRevenue)) {
 		return false
 	}
-	return containsAny(q, []string{"最新月份", "最新一个月", "最新的月份", "最新月", "最近一个月"})
+	return containsAny(q, []string{"最新可见月份", "最新完整月份", "最新月份", "最新一个月", "最新的月份", "最新月", "最近完整月份", "最近一个月"})
 }

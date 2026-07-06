@@ -766,6 +766,32 @@ VALUES ('C-JUN-001','2026-06','contract_fund_income','26年Q2收入明细',300,1
 	if strings.Contains(res.Message, "账务数据仅到") || strings.Contains(res.Message, "银行卡") || strings.Contains(res.Message, "营业收入") {
 		t.Fatalf("explicit revenue-table project settlement should not answer account/cash reconciliation, got: %s", res.Message)
 	}
+
+	for _, question := range []string{
+		"按最新可见月份，查看当月营收（项目结算收入）",
+		"最新月份项目结算收入是多少？",
+	} {
+		route := engine.resolveQueryRouting(question)
+		if route.entity != "" || route.hasRealEntity {
+			t.Fatalf("%q entity = %q hasRealEntity=%t, want company project revenue", question, route.entity, route.hasRealEntity)
+		}
+		if !route.spec.PreferContractAggregate {
+			t.Fatalf("%q PreferContractAggregate = false, want contract aggregate; spec=%+v", question, route.spec)
+		}
+		res := engine.Query(question)
+		if !res.Success {
+			t.Fatalf("%q query failed: %s data=%+v", question, res.Message, res.Data)
+		}
+		if got := res.Data["period"]; got != "2026-06" {
+			t.Fatalf("%q period = %v, want 2026-06; message=%s data=%+v", question, got, res.Message, res.Data)
+		}
+		if got := res.Data["total"]; got != float64(300) {
+			t.Fatalf("%q total = %v, want project settlement revenue 300; data=%+v", question, got, res.Data)
+		}
+		if strings.Contains(res.Message, "账务数据仅到") || strings.Contains(res.Message, "银行卡") || strings.Contains(res.Message, "营业收入") {
+			t.Fatalf("%q should not answer account/cash reconciliation, got: %s", question, res.Message)
+		}
+	}
 }
 
 func buildQueryContextResolutionDB(t *testing.T) string {
