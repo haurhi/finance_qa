@@ -851,6 +851,49 @@ test("llm_output patches runner payload text with missing FinanceQA atoms", asyn
     assert.doesNotMatch(event.payloads[0].text, /-金额：|金额：-633859\.33 元 元/);
     assert.match(event.payloads[0].text, /来源：《交易查询，20260101-20260331，共143笔\.xlsx》/);
     assert.match(event.payloads[0].text, /来源更新时间：2026-04-27 13:33:40/);
+
+    const nestedSessionKey = "finance-runner-nested-result-payload-session";
+    beforeWrite({
+      message: {
+        role: "toolResult",
+        toolName: "finance-query",
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: true,
+            finance_facts: {
+              schema_version: "finance_facts.v1",
+              resolved_period: "2026-06",
+              basis: "项目口径",
+              headline_metric: "项目结算收入（营收）",
+              headline_amount: 936308.25,
+              source_note: "来源：《优集收入、成本计算表 - 上传.xlsx》的【26年Q2收入明细】",
+              source_update_note: "来源更新时间：2026-07-03 18:39:21",
+              required_atoms: [
+                "期间：2026-06",
+                "口径：项目口径",
+                "金额：936308.25 元",
+                "来源：《优集收入、成本计算表 - 上传.xlsx》的【26年Q2收入明细】",
+                "来源更新时间：2026-07-03 18:39:21"
+              ]
+            }
+          })
+        }]
+      }
+    }, { sessionKey: nestedSessionKey });
+
+    const nestedEvent = {
+      result: {
+        payloads: [{
+          text: "2026年6月，项目结算 **93.63万** 元。\n\n来源：《优集收入、成本计算表 - 上传.xlsx》的【26年Q2收入明细】，更新时间 2026-07-03 18:39:21"
+        }]
+      }
+    };
+    llmOutput(nestedEvent, { sessionKey: nestedSessionKey });
+
+    assert.match(nestedEvent.result.payloads[0].text, /金额：936308\.25 元/);
+    assert.match(nestedEvent.result.payloads[0].text, /来源更新时间：2026-07-03 18:39:21/);
+    assert.doesNotMatch(nestedEvent.result.payloads[0].text, /final_answer|finance-query|工具返回/);
   });
 });
 

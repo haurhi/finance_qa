@@ -1295,6 +1295,7 @@ function patchAssistantTextsWithFinanceFactAtoms(target, atoms, payload) {
   if (Array.isArray(target.assistantTexts) && patchLastStringArrayItem(target.assistantTexts, atoms, payload)) return true;
   if (Array.isArray(target.payloads) && patchLastTextObject(target.payloads, atoms, payload)) return true;
   if (Array.isArray(target.content) && patchLastTextObject(target.content, atoms, payload)) return true;
+  if (target.result && typeof target.result === "object" && patchAssistantTextsWithFinanceFactAtoms(target.result, atoms, payload)) return true;
   if (typeof target.text === "string") {
     const patched = patchFinanceTextValue(target.text, atoms, payload);
     if (patched.changed) {
