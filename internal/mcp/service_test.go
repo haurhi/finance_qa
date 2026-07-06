@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -28,5 +29,85 @@ func TestServiceRejectsUnknownTool(t *testing.T) {
 	var toolErr *ToolError
 	if !errors.As(err, &toolErr) || toolErr.Code != -32602 {
 		t.Fatalf("RunTool error = %#v, want -32602 ToolError", err)
+	}
+}
+
+func TestEffectiveFinanceQueryProtectsDynamicPeriodAndKeepsEntityHints(t *testing.T) {
+	t.Parallel()
+
+	raw := "从项目口径看，上个完整自然月百度这个客户还有多少没收回来？"
+	rewritten := "2026年6月 百度在线网络技术(北京)有限公司 项目应收未收"
+
+	got := effectiveFinanceQuery(rewritten, raw)
+
+	for _, want := range []string{"上个完整自然月", "项目口径", "百度在线网络技术(北京)有限公司"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("effectiveFinanceQuery should preserve %q, got %q", want, got)
+		}
+	}
+	for _, forbidden := range []string{"2026年6月", "2026-06"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("effectiveFinanceQuery should remove rewritten fixed period %q, got %q", forbidden, got)
+		}
+	}
+}
+
+func TestEffectiveFinanceQueryKeepsDynamicPeriodForSourceSpecificResolution(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name      string
+		raw       string
+		rewritten string
+		want      []string
+		forbid    []string
+	}{
+		{
+			name:      "bank_flow_latest_available_month",
+			raw:       "银行卡上，上个完整自然月净现金流是多少？",
+			rewritten: "2026年6月银行流水净现金流",
+			want:      []string{"银行卡", "上个完整自然月", "净现金流"},
+			forbid:    []string{"2026年6月", "2026-06"},
+		},
+		{
+			name:      "project_income_latest_project_month",
+			raw:       "收入表中上个完整自然月项目结算营收是多少？",
+			rewritten: "2026年6月收入表项目结算营收",
+			want:      []string{"收入表", "上个完整自然月", "项目结算营收"},
+			forbid:    []string{"2026年6月", "2026-06"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := effectiveFinanceQuery(tt.rewritten, tt.raw)
+
+			for _, want := range tt.want {
+				if !strings.Contains(got, want) {
+					t.Fatalf("effectiveFinanceQuery should preserve %q, got %q", want, got)
+				}
+			}
+			for _, forbidden := range tt.forbid {
+				if strings.Contains(got, forbidden) {
+					t.Fatalf("effectiveFinanceQuery should remove rewritten fixed period %q, got %q", forbidden, got)
+				}
+			}
+		})
+	}
+}
+
+func TestEffectiveFinanceQueryProtectsExplicitUserPeriod(t *testing.T) {
+	t.Parallel()
+
+	raw := "2026年6月银行卡净现金流是多少？"
+	rewritten := "最近完整月份 银行卡净现金流"
+
+	got := effectiveFinanceQuery(rewritten, raw)
+
+	if !strings.Contains(got, "2026年6月") {
+		t.Fatalf("effectiveFinanceQuery should keep explicit user period, got %q", got)
+	}
+	if strings.Contains(got, "最近完整月份") {
+		t.Fatalf("effectiveFinanceQuery should not replace explicit user period with dynamic period, got %q", got)
 	}
 }

@@ -3,12 +3,42 @@ package mcp
 import (
 	"context"
 	"database/sql"
+	"regexp"
 	"strings"
 
 	"financeqa/internal/db"
 	"financeqa/internal/dimensions"
 	"financeqa/internal/ingest"
 	"financeqa/internal/query"
+)
+
+var financeQueryKeywords = []string{
+	"财务", "经营", "合同", "项目", "客户", "供应商",
+	"回款", "收款", "付款", "开票", "发票",
+	"收入", "营收", "成本", "费用", "利润", "净利润",
+	"应收", "应付", "到账", "支出", "现金", "银行", "余额",
+}
+
+var protectedFinanceTerms = []string{
+	"账上", "序时账", "序时帐", "凭证",
+	"科目余额", "资产负债表", "利润表", "余额表",
+	"银行流水", "银行卡", "银行账户", "官方余额表",
+	"财务口径", "项目口径", "合同口径", "项目成本口径",
+	"实际到账", "实际支出", "应收账款", "应付账款",
+}
+
+var relativeFinancePeriodTerms = []string{
+	"上一个完整自然月", "上个完整自然月", "上一个完整月份", "上个完整月份",
+	"上一个完整月", "上个完整月", "最近完整月份", "最新完整月份",
+	"最近月份", "最新月份", "上个月", "上月",
+	"至今", "到现在", "现在", "当前", "目前",
+}
+
+var (
+	absoluteFinanceMonthChinesePattern = regexp.MustCompile(`20\d{2}\s*年\s*(0?[1-9]|1[0-2])\s*月`)
+	absoluteFinanceMonthDashPattern    = regexp.MustCompile(`20\d{2}\s*[-/.]\s*(0?[1-9]|1[0-2])`)
+	absoluteFinanceMonthChineseKey     = regexp.MustCompile(`(20\d{2})\s*年\s*(0?[1-9]|1[0-2])\s*月`)
+	absoluteFinanceMonthDashKey        = regexp.MustCompile(`(20\d{2})\s*[-/.]\s*(0?[1-9]|1[0-2])`)
 )
 
 // ServiceConfig contains the business configuration shared by MCP transports.
@@ -82,29 +112,24 @@ func effectiveFinanceQuery(rewritten, rawUser string) string {
 	if queryText == "" {
 		return rawText
 	}
-	if missingProtectedFinanceTerms(rawText, queryText) || lostRelativeFinancePeriod(rawText, queryText) {
-		return rawText
+	if shouldPreferRawFinanceSemantics(rawText, queryText) {
+		return mergeProtectedFinanceQuery(rawText, queryText)
 	}
 	return queryText
 }
 
 func looksLikeFinanceQueryText(text string) bool {
-	return containsAnyText(text, []string{
-		"财务", "经营", "合同", "项目", "客户", "供应商",
-		"回款", "收款", "付款", "开票", "发票",
-		"收入", "营收", "成本", "费用", "利润", "净利润",
-		"应收", "应付", "到账", "支出", "现金", "银行", "余额",
-	})
+	return containsAnyText(text, financeQueryKeywords)
+}
+
+func shouldPreferRawFinanceSemantics(rawUser, rewritten string) bool {
+	return missingProtectedFinanceTerms(rawUser, rewritten) ||
+		lostRelativeFinancePeriod(rawUser, rewritten) ||
+		lostAbsoluteFinanceMonth(rawUser, rewritten)
 }
 
 func missingProtectedFinanceTerms(rawUser, rewritten string) bool {
-	for _, term := range []string{
-		"账上", "序时账", "序时帐", "凭证",
-		"科目余额", "资产负债表", "利润表", "余额表",
-		"银行流水", "银行卡", "银行账户", "官方余额表",
-		"财务口径", "项目口径", "合同口径", "项目成本口径",
-		"实际到账", "实际支出", "应收账款", "应付账款",
-	} {
+	for _, term := range protectedFinanceTerms {
 		if strings.Contains(rawUser, term) && !strings.Contains(rewritten, term) {
 			return true
 		}
@@ -113,19 +138,67 @@ func missingProtectedFinanceTerms(rawUser, rewritten string) bool {
 }
 
 func lostRelativeFinancePeriod(rawUser, rewritten string) bool {
-	hasRelative := containsAnyText(rawUser, []string{
-		"上一个完整自然月", "上个完整自然月", "上一个完整月份", "上个完整月份",
-		"最近完整月份", "最新完整月份", "最近月份", "最新月份",
-		"至今", "到现在", "现在", "当前", "目前",
-	})
-	if !hasRelative {
+	if !containsAnyText(rawUser, relativeFinancePeriodTerms) {
 		return false
 	}
-	return !containsAnyText(rewritten, []string{
-		"上一个完整自然月", "上个完整自然月", "上一个完整月份", "上个完整月份",
-		"最近完整月份", "最新完整月份", "最近月份", "最新月份",
-		"至今", "到现在", "现在", "当前", "目前",
-	})
+	return !containsAnyText(rewritten, relativeFinancePeriodTerms)
+}
+
+func lostAbsoluteFinanceMonth(rawUser, rewritten string) bool {
+	rawMonths := absoluteFinanceMonthKeys(rawUser)
+	if len(rawMonths) == 0 {
+		return false
+	}
+	rewrittenMonths := absoluteFinanceMonthKeys(rewritten)
+	for month := range rawMonths {
+		if !rewrittenMonths[month] {
+			return true
+		}
+	}
+	return false
+}
+
+func mergeProtectedFinanceQuery(rawUser, rewritten string) string {
+	rawText := strings.TrimSpace(rawUser)
+	hint := strings.TrimSpace(rewritten)
+	if rawText == "" || hint == "" || rawText == hint {
+		return rawText
+	}
+	if containsAnyText(rawText, relativeFinancePeriodTerms) || len(absoluteFinanceMonthKeys(rawText)) > 0 {
+		hint = stripFinancePeriodPhrases(hint)
+	}
+	if hint == "" || strings.Contains(rawText, hint) {
+		return rawText
+	}
+	return rawText + "；补充识别：" + hint
+}
+
+func stripFinancePeriodPhrases(text string) string {
+	cleaned := absoluteFinanceMonthChinesePattern.ReplaceAllString(text, " ")
+	cleaned = absoluteFinanceMonthDashPattern.ReplaceAllString(cleaned, " ")
+	for _, term := range relativeFinancePeriodTerms {
+		cleaned = strings.ReplaceAll(cleaned, term, " ")
+	}
+	return strings.Join(strings.Fields(cleaned), " ")
+}
+
+func absoluteFinanceMonthKeys(text string) map[string]bool {
+	keys := map[string]bool{}
+	for _, match := range absoluteFinanceMonthChineseKey.FindAllStringSubmatch(text, -1) {
+		keys[financeMonthKey(match[1], match[2])] = true
+	}
+	for _, match := range absoluteFinanceMonthDashKey.FindAllStringSubmatch(text, -1) {
+		keys[financeMonthKey(match[1], match[2])] = true
+	}
+	return keys
+}
+
+func financeMonthKey(year, month string) string {
+	month = strings.TrimLeft(month, "0")
+	if len(month) == 1 {
+		month = "0" + month
+	}
+	return year + "-" + month
 }
 
 func containsAnyText(text string, terms []string) bool {

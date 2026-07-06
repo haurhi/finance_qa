@@ -587,8 +587,57 @@ function missingProtectedFinanceTerms(protectedQuestion, rawQuestion) {
   return FINANCE_QUERY_PROTECTION_TERMS.filter((term) => protectedText.includes(term) && !rawText.includes(term));
 }
 
+const FINANCE_DYNAMIC_PERIOD_RE = /(最新月份|最新完整月份|最近完整月份|上个月|上月|上个完整自然月|上一个完整自然月|上个完整月|上一个完整月|至今|到现在|目前|当前|最新)/;
+const FINANCE_ABSOLUTE_MONTH_RE = /20\d{2}\s*年\s*(?:0?[1-9]|1[0-2])\s*月|20\d{2}\s*[-/.]\s*(?:0?[1-9]|1[0-2])/g;
+
 function hasDynamicFinancePeriod(rawText) {
-  return /(最新月份|最新完整月份|最近完整月份|上个完整自然月|上一个完整自然月|上个完整月|上一个完整月|至今|到现在|目前|当前|最新)/.test(userVisibleText(rawText));
+  return FINANCE_DYNAMIC_PERIOD_RE.test(userVisibleText(rawText));
+}
+
+function absoluteFinanceMonthKeys(rawText) {
+  const text = userVisibleText(rawText);
+  const keys = new Set();
+  for (const match of text.matchAll(/(20\d{2})\s*年\s*(0?[1-9]|1[0-2])\s*月/g)) {
+    keys.add(`${match[1]}-${String(Number(match[2])).padStart(2, "0")}`);
+  }
+  for (const match of text.matchAll(/(20\d{2})\s*[-/.]\s*(0?[1-9]|1[0-2])/g)) {
+    keys.add(`${match[1]}-${String(Number(match[2])).padStart(2, "0")}`);
+  }
+  return keys;
+}
+
+function hasAbsoluteFinanceMonth(rawText) {
+  return absoluteFinanceMonthKeys(rawText).size > 0;
+}
+
+function keepsAllAbsoluteFinanceMonths(protectedQuestion, rawQuestion) {
+  const protectedKeys = absoluteFinanceMonthKeys(protectedQuestion);
+  if (!protectedKeys.size) return true;
+  const rawKeys = absoluteFinanceMonthKeys(rawQuestion);
+  for (const key of protectedKeys) {
+    if (!rawKeys.has(key)) return false;
+  }
+  return true;
+}
+
+function stripFinancePeriodPhrases(rawText) {
+  return userVisibleText(rawText)
+    .replace(FINANCE_ABSOLUTE_MONTH_RE, " ")
+    .replace(FINANCE_DYNAMIC_PERIOD_RE, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function mergeProtectedFinanceQuestion(protectedQuestion, rawQuestion) {
+  const protectedText = userVisibleText(protectedQuestion);
+  const rawText = userVisibleText(rawQuestion);
+  if (!protectedText || !rawText || protectedText === rawText) return protectedText || rawText;
+  let hint = rawText;
+  if (hasDynamicFinancePeriod(protectedText) || hasAbsoluteFinanceMonth(protectedText)) {
+    hint = stripFinancePeriodPhrases(hint);
+  }
+  if (!hint || protectedText.includes(hint)) return protectedText;
+  return `${protectedText}；补充识别：${hint}`;
 }
 
 function shouldPreferProtectedFinanceQuestion(protectedQuestion, rawQuestion) {
@@ -597,6 +646,7 @@ function shouldPreferProtectedFinanceQuestion(protectedQuestion, rawQuestion) {
   if (!protectedText || !rawText || protectedText === rawText) return false;
   if (!isFinanceQuestion(protectedText) || !isFinanceQuestion(rawText)) return false;
   if (hasDynamicFinancePeriod(protectedText) && !hasDynamicFinancePeriod(rawText)) return true;
+  if (hasAbsoluteFinanceMonth(protectedText) && !keepsAllAbsoluteFinanceMonths(protectedText, rawText)) return true;
   return missingProtectedFinanceTerms(protectedText, rawText).length > 0;
 }
 
@@ -1264,7 +1314,7 @@ function createFinanceTool(name, description, parameters) {
         ? (rawQuery || shouldUseProtectedQuestion
           ? {
             ...rawParamsObject,
-            query: shouldUseProtectedQuestion ? protectedQuestion : rawQuery,
+            query: shouldUseProtectedQuestion ? mergeProtectedFinanceQuestion(protectedQuestion, rawQuery) : rawQuery,
             ...(protectedQuestion ? { raw_user_query: protectedQuestion } : {})
           }
           : rawParams)

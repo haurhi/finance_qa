@@ -166,6 +166,28 @@ test("finance-query execute preserves raw user finance question for protected te
   });
 });
 
+test("finance-query execute keeps rewritten entity hints while protecting dynamic period", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const rawUserQuestion = "从项目口径看，上个完整自然月百度这个客户还有多少没收回来？";
+    await hooks.get("before_prompt_build")({
+      prompt: rawUserQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: rawUserQuestion }] }]
+    }, { sessionKey: "finance-raw-period-query-entity-merge" });
+
+    await tools.get("finance-query").execute("call-rewritten-query-with-entity", {
+      query: "2026年6月 百度在线网络技术(北京)有限公司 项目应收未收"
+    });
+
+    const args = toolCalls.at(-1).arguments;
+    assert.equal(args.raw_user_query, rawUserQuestion);
+    assert.match(args.query, /上个完整自然月/);
+    assert.match(args.query, /项目口径/);
+    assert.match(args.query, /百度在线网络技术\(北京\)有限公司/);
+    assert.doesNotMatch(args.query, /2026年6月|2026-06/);
+  });
+});
+
 test("finance prompt hook prefers current prompt over stale session history", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
