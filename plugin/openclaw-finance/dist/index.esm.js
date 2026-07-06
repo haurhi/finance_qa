@@ -1016,6 +1016,13 @@ function sameFinanceAmount(a, b) {
   return Number.isFinite(left) && Number.isFinite(right) && Math.abs(left - right) < 0.005;
 }
 
+function displayedFinanceAmountInYuan(rawNumber, rawUnit) {
+  const amount = Number(String(rawNumber || "").replace(/,/g, ""));
+  if (!Number.isFinite(amount)) return NaN;
+  const unit = String(rawUnit || "").trim();
+  return unit.startsWith("万") ? amount * 10000 : amount;
+}
+
 function sourceUpdateAtomLine(atoms) {
   for (const atom of atoms || []) {
     const line = String(typeof atom === "string" ? atom : atom?.line || "").trim();
@@ -1224,15 +1231,20 @@ function replaceConflictingHeadlineAmount(text, atoms, payload) {
   const label = String(compact?.metric || compact?.metric_label || "").trim();
   if (!expectedAmount || !label) return text;
   const lines = String(text || "").split("\n");
-  const moneyPattern = /-?[0-9][0-9,]*(?:\.\d+)?(?=\s*(?:万元|万|元))/g;
+  const moneyPattern = /(-?[0-9][0-9,]*(?:\.\d+)?)(\s*)(万元|万|元)/g;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] || "";
     if (!line.includes(label)) continue;
     const matches = [...line.matchAll(moneyPattern)];
-    if (matches.length !== 1 || sameFinanceAmount(matches[0][0], expectedAmount)) continue;
+    if (matches.length !== 1) continue;
+    const displayAmount = displayedFinanceAmountInYuan(matches[0][1], matches[0][3]);
+    if (sameFinanceAmount(displayAmount, expectedAmount)) continue;
     const start = matches[0].index ?? -1;
     if (start < 0) continue;
-    lines[i] = line.slice(0, start) + expectedAmount + line.slice(start + matches[0][0].length);
+    const end = start + matches[0][0].length;
+    const trailingAlreadyHasYuan = matches[0][3] !== "元" && /^\*{0,2}\s*元/.test(line.slice(end));
+    const replacement = trailingAlreadyHasYuan ? expectedAmount : `${expectedAmount} 元`;
+    lines[i] = line.slice(0, start) + replacement + line.slice(end);
     return lines.join("\n");
   }
   return text;

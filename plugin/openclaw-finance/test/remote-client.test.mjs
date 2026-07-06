@@ -948,13 +948,14 @@ test("llm_output still patches stdout after before_message_write patched persist
     const event = {
       result: {
         payloads: [{
-          text: "2026年6月，项目结算收入 **93.63万** 元。"
+          text: "2026年6月，项目结算收入（营收）：**936308.25万** 元。"
         }]
       }
     };
     llmOutput(event, { sessionKey });
 
     assert.match(event.result.payloads[0].text, /金额：936308\.25 元/);
+    assert.doesNotMatch(event.result.payloads[0].text, /936308\.25万/);
     assert.match(event.result.payloads[0].text, /来源更新时间：2026-07-03 18:39:21/);
 
     const nextEvent = {
