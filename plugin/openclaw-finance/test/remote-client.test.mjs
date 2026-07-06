@@ -677,6 +677,66 @@ test("finance facts package drives prompt context and answer guard", async () =>
   }, { toolPayload });
 });
 
+test("before_message_write appends cash flow amount from structured payload", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks }) => {
+    const beforeWrite = hooks.get("before_message_write");
+    const sessionKey = "finance-cash-flow-fact-session";
+    beforeWrite({
+      message: {
+        role: "toolResult",
+        toolName: "finance-query",
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: true,
+            final_answer: "2026-03 银行卡净增加 -633859.33 元。",
+            finance_facts: {
+              schema_version: "finance_facts.v1",
+              resolved_period: "2026-03",
+              requested_period: "2026-07",
+              basis: "银行流水口径",
+              source_files: ["《交易查询，20260101-20260331，共143笔.xlsx》"],
+              source_note: "来源：《交易查询，20260101-20260331，共143笔.xlsx》",
+              source_update_note: "来源更新时间：2026-04-27 13:33:40",
+              required_atoms: [
+                "期间：2026-03",
+                "口径：银行流水口径",
+                "来源：《交易查询，20260101-20260331，共143笔.xlsx》",
+                "来源更新时间：2026-04-27 13:33:40"
+              ]
+            },
+            data: {
+              cash_flow: {
+                "净现金流": -633859.33,
+                "现金流入": 2613554.53,
+                "现金流出": 3247413.86
+              }
+            }
+          })
+        }]
+      }
+    }, { sessionKey });
+
+    const missingAmount = {
+      role: "assistant",
+      content: [{
+        type: "text",
+        text: [
+          "口径：银行流水口径",
+          "期间：2026-03",
+          "说明：当前未返回该月净现金流具体数值。",
+          "来源：《交易查询，20260101-20260331，共143笔.xlsx》",
+          "来源更新时间：2026-04-27 13:33:40"
+        ].join("\n")
+      }],
+      stopReason: "stop"
+    };
+    const patched = beforeWrite({ message: missingAmount }, { sessionKey })?.message;
+    assert.match(patched.content[0].text, /金额：-633859\.33 元/);
+  });
+});
+
 async function withServer(handler, run) {
   const server = http.createServer(async (req, res) => {
     let body = "";

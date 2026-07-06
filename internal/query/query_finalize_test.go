@@ -217,6 +217,54 @@ func TestFinalizeQueryResultBuildsStructuredFinanceFacts(t *testing.T) {
 	}
 }
 
+func TestFinalizeQueryResultBuildsCashFlowFinanceFacts(t *testing.T) {
+	ctx := queryExecutionContext{
+		spec: QuerySpec{
+			OriginalQuestion: "银行卡上，上个完整自然月净现金流是多少？",
+			QueryFamily:      QueryFamilyGeneral,
+			PeriodFrom:       "2026-07",
+			PeriodTo:         "2026-07",
+			SourceConstraint: "bank_statement",
+		},
+	}
+
+	res := finalizeQueryResult(ctx, Result{
+		Success: true,
+		Message: "2026-03 银行卡净增加 -633859.33 元。",
+		Data: map[string]any{
+			"period": "2026-03",
+			"cash_flow": map[string]any{
+				"净现金流": -633859.33,
+				"现金流入": 2613554.53,
+				"现金流出": 3247413.86,
+			},
+			"source_tables":      []string{"fin_bank_statement"},
+			"source_documents":   []string{"《交易查询，20260101-20260331，共143笔.xlsx》"},
+			"source_note":        "来源：《交易查询，20260101-20260331，共143笔.xlsx》",
+			"source_update_note": "来源更新时间：2026-04-27 13:33:40",
+		},
+	})
+
+	facts, ok := res.Data["finance_facts"].(map[string]any)
+	if !ok {
+		t.Fatalf("finance_facts missing: %+v", res.Data)
+	}
+	if got := facts["headline_metric"]; got != "净现金流" {
+		t.Fatalf("headline_metric = %v, want 净现金流; facts=%+v", got, facts)
+	}
+	if got := facts["headline_amount"]; got != -633859.33 {
+		t.Fatalf("headline_amount = %v, want -633859.33; facts=%+v", got, facts)
+	}
+	metrics, ok := facts["metrics"].(map[string]any)
+	if !ok || metrics["净现金流"] != -633859.33 {
+		t.Fatalf("metrics = %#v, want 净现金流=-633859.33", facts["metrics"])
+	}
+	required := anySourceStringSlice(facts["required_atoms"])
+	if !containsString(required, "金额：-633859.33 元") {
+		t.Fatalf("required_atoms = %#v, want cash flow amount atom", required)
+	}
+}
+
 func TestFinalizeQueryResultLabelsSourceConstraintBasis(t *testing.T) {
 	ctx := queryExecutionContext{
 		spec: QuerySpec{

@@ -705,19 +705,36 @@ function normalizeFinanceFacts(value) {
   return value;
 }
 
+function cashFlowHeadlineAmount(data, payload, financeFacts) {
+  for (const value of [
+    financeFacts?.headline_amount,
+    data.net_cash_inflow,
+    data["净现金流"],
+    data.cash_flow?.["净现金流"],
+    data.cash_view?.["净现金流"],
+    payload.net_cash_inflow,
+    payload["净现金流"]
+  ]) {
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return undefined;
+}
+
 function compactFinancePayload(payload) {
   if (!payload || typeof payload !== "object") return payload;
   const data = payload.data && typeof payload.data === "object" ? payload.data : {};
   const financeFacts = normalizeFinanceFacts(payload.finance_facts || data.finance_facts);
+  const cashFlowAmount = cashFlowHeadlineAmount(data, payload, financeFacts);
+  const metricLabel = data.metric_label || payload.metric_label || financeFacts?.headline_metric || (cashFlowAmount !== undefined ? "净现金流" : "");
   return {
     error: payload.error,
     success: payload.success,
     finance_facts: financeFacts,
     final_answer: financeFacts ? "" : (payload.final_answer || payload.boss_reply_text || payload.message),
     metric: financeFacts?.headline_metric || data.metric || payload.metric,
-    metric_label: data.metric_label || payload.metric_label || financeFacts?.headline_metric,
+    metric_label: metricLabel,
     business_basis: financeFacts?.basis || data.business_basis || payload.business_basis,
-    total: financeFacts?.headline_amount ?? data.total ?? payload.total,
+    total: financeFacts?.headline_amount ?? data.total ?? payload.total ?? cashFlowAmount,
     source_note: financeFacts?.source_note || data.source_note || payload.source_note,
     source_update_note: financeFacts?.source_update_note || data.source_update_note || payload.source_update_note,
     period: financeFacts?.resolved_period || data.period || payload.period,
@@ -733,7 +750,7 @@ function compactFinancePayload(payload) {
     tax_summary: data.tax_summary || payload.tax_summary,
     source_documents: financeFacts?.source_files || data.source_documents || payload.source_documents,
     source_tables: financeFacts?.source_tables || data.source_tables || payload.source_tables,
-    metrics: financeFacts?.metrics || data.metrics || payload.metrics,
+    metrics: financeFacts?.metrics || data.metrics || payload.metrics || data.cash_flow || data.cash_view,
     warnings: financeFacts?.warnings || data.warnings || payload.warnings,
     explanation_hints: financeFacts?.explanation_hints || data.explanation_hints || payload.explanation_hints,
     items: data.items || payload.items,

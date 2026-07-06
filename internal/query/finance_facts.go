@@ -54,6 +54,15 @@ func buildFinanceFacts(spec QuerySpec, data map[string]any) map[string]any {
 		facts["metrics"] = metrics
 	}
 	headlineMetric := firstFinanceFactString(data["headline_metric"], data["metric_label"], data["metric"])
+	if headlineMetric == "" {
+		if _, ok := financeFactNetCashAmount(data, metrics); ok {
+			headlineMetric = "净现金流"
+		} else if len(metrics) == 1 {
+			for key := range metrics {
+				headlineMetric = key
+			}
+		}
+	}
 	if headlineMetric != "" {
 		facts["headline_metric"] = headlineMetric
 	}
@@ -178,6 +187,15 @@ func financeFactMetrics(data map[string]any) map[string]any {
 			}
 		}
 	}
+	for _, source := range []any{data["cash_flow"], data["cash_view"]} {
+		if raw, ok := source.(map[string]any); ok {
+			for _, key := range []string{"现金流入", "现金流出", "净现金流"} {
+				if value, ok := raw[key]; ok && value != nil {
+					metrics[key] = value
+				}
+			}
+		}
+	}
 	if len(metrics) == 0 {
 		label := firstFinanceFactString(data["metric_label"], data["metric"])
 		if amount, ok := financeFactAnyNumber(data["total"]); ok && label != "" {
@@ -188,14 +206,33 @@ func financeFactMetrics(data map[string]any) map[string]any {
 }
 
 func financeFactHeadlineAmount(data map[string]any, metrics map[string]any) (float64, bool) {
-	for _, value := range []any{data["headline_amount"], data["total"], data["amount"], data["bank_in"], data["bank_out"]} {
+	for _, value := range []any{data["headline_amount"], data["total"], data["amount"], data["bank_in"], data["bank_out"], data["net_cash_inflow"], data["净现金流"]} {
 		if amount, ok := financeFactAnyNumber(value); ok {
 			return amount, true
 		}
 	}
+	if amount, ok := financeFactNetCashAmount(data, metrics); ok {
+		return amount, true
+	}
 	if len(metrics) == 1 {
 		for _, value := range metrics {
 			return financeFactAnyNumber(value)
+		}
+	}
+	return 0, false
+}
+
+func financeFactNetCashAmount(data map[string]any, metrics map[string]any) (float64, bool) {
+	if metrics != nil {
+		if amount, ok := financeFactAnyNumber(metrics["净现金流"]); ok {
+			return amount, true
+		}
+	}
+	for _, source := range []any{data["cash_flow"], data["cash_view"]} {
+		if raw, ok := source.(map[string]any); ok {
+			if amount, ok := financeFactAnyNumber(raw["净现金流"]); ok {
+				return amount, true
+			}
 		}
 	}
 	return 0, false
