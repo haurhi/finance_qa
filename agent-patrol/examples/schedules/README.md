@@ -50,11 +50,11 @@ FinanceQA payable templates intentionally separate two cost-side metrics:
 3. If configured, `AGENT_PATROL_PREPARE_CMD` rebuilds the local FinanceQA SQLite mirror from `FINANCEQA_REFERENCE_SNAPSHOT`, keeping the OpenClaw actual path and the golden provider on the same snapshot.
 4. `agent-patrol run` loads `AGENT_PATROL_CONFIG` and selects deterministic cases from the requested suite.
 5. If configured, target-level `questionGenerator` calls `AGENT_PATROL_QUESTION_GEN_CMD` to rewrite only the natural-language question. The case id, template, intent, period mode, scoring rules, and golden answer stay deterministic.
-6. The actual path asks OpenClaw through `OPENCLAW_AGENT_CMD`; OpenClaw then calls the FinanceQA MCP/tool as it would in production.
+6. The actual path asks OpenClaw through `OPENCLAW_AGENT_CMD`; FinanceQA profiles add `--require-tool finance-query` so the patrol message explicitly requires a fresh read-only FinanceQA tool call before answering.
 7. The golden path calls `financeqa_snapshot_reference.mjs` against the local snapshot, not OpenClaw and not direct `finance-query`.
 8. The optional direct FinanceQA MCP baseline is kept only for diagnostics.
 9. Reports are written to `tmp/financeqa-dry-run/<run_id>/`, including `summary.md`, `summary.json`, `cases.json`, `case_evidence.jsonl`, and `failed_cases/*.json`.
-10. The wrapper separates scheduler health from business accuracy: `report_status=generated` means the report artifact was produced, while `business_status=threshold_passed` or `business_status=threshold_failed` records the score.
+10. The wrapper separates scheduler health from answer quality: `report_status=generated` means the report artifact was produced, while `business_status=runner_invalid`, `valid_business_threshold_passed`, `valid_business_threshold_failed`, `threshold_passed`, or `threshold_failed` records how the run should be interpreted.
 11. If configured, `AGENT_PATROL_CLEANUP_CMD` prunes only patrol-owned session transcripts for the runner kinds listed in `AGENT_PATROL_CLEANUP_KINDS`.
 
 ## Optional LLM Question Variation
@@ -122,6 +122,7 @@ For the production host, use `financeqa-production-hourly.env.example`, `finance
 - It sets `AGENT_PATROL_ENV=production` and refuses `prepare-financeqa-snapshot-mirror.sh`.
 - It exports a read-only snapshot from the live `fin_*` tables before each run with `examples/golden/export_financeqa_snapshot.sh`.
 - It uses `presets/financeqa-production.yaml`, where `goldenReference` is enabled and direct `finance-query` remains diagnostic only.
+- Its OpenClaw runner command includes `--require-tool finance-query`; this is a patrol-only instruction and does not change boss-facing cron prompts.
 - It enables LLM question rewriting through `AGENT_PATROL_QUESTION_GEN_CMD`; the LLM may vary wording but never supplies the expected answer.
 - It runs hourly with local report artifacts only and cleans only OpenClaw `patrol-*` sessions.
 - It prunes old report directories with `AGENT_PATROL_REPORT_RETENTION_DAYS`.

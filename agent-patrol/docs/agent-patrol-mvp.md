@@ -72,6 +72,7 @@ MVP scoring is deterministic string/amount matching, not an LLM judge.
 - `mustContainAny`: every listed group must have at least one matching term. Use this for acceptable wording variants such as `["项目口径", "所有项目", "项目应付"]`.
 - `mustNotContain`: none of the listed terms may appear.
 - `amounts`: each amount must appear in a normalized numeric form.
+- `amountLabelGroups`: config-provided aliases for labels and term checks. Put domain wording here instead of hardcoding synonyms in the generic scorer.
 - `referenceChecks`: derive amounts, periods, sources, or perspective terms from the active scoring reference. If `goldenReference` is configured, this derives from the golden answer; otherwise it derives from the direct-tool baseline.
 
 ## Case Variation

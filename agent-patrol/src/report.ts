@@ -20,6 +20,9 @@ interface ReportInput {
     validBusinessPassed?: number;
     validBusinessAccuracy?: number;
     durationMs?: number;
+    runnerHealthPassed?: boolean;
+    validThresholdPassed?: boolean;
+    validBusinessThresholdPassed?: boolean;
     thresholdPassed?: boolean;
     businessThresholdPassed?: boolean;
   };
@@ -80,13 +83,22 @@ function renderSummary(input: ReportInput): string {
   if (typeof input.aggregate.invalid === "number") {
     lines.push(`Runner Invalid: ${input.aggregate.invalid}`);
   }
+  if (typeof input.aggregate.runnerHealthPassed === "boolean") {
+    lines.push(`Runner Health: ${input.aggregate.runnerHealthPassed ? "passed" : "invalid"}`);
+  }
   if (typeof input.aggregate.validAccuracy === "number") {
     lines.push(`Valid Accuracy: ${(input.aggregate.validAccuracy * 100).toFixed(2)}%`);
     lines.push(`Valid Passed: ${input.aggregate.validPassed ?? 0}/${input.aggregate.validTotal ?? 0}`);
+    if (typeof input.aggregate.validThresholdPassed === "boolean") {
+      lines.push(`Valid Threshold: ${input.aggregate.validThresholdPassed ? "passed" : "failed"}`);
+    }
   }
   if (typeof input.aggregate.validBusinessAccuracy === "number") {
     lines.push(`Valid Business Accuracy: ${(input.aggregate.validBusinessAccuracy * 100).toFixed(2)}%`);
     lines.push(`Valid Business Passed: ${input.aggregate.validBusinessPassed ?? 0}/${input.aggregate.validTotal ?? 0}`);
+    if (typeof input.aggregate.validBusinessThresholdPassed === "boolean") {
+      lines.push(`Valid Business Threshold: ${input.aggregate.validBusinessThresholdPassed ? "passed" : "failed"}`);
+    }
   }
   lines.push("");
   const categoryNames = Object.keys(categoryCounts);

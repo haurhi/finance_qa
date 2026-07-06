@@ -60,7 +60,11 @@ node examples/golden/financeqa_snapshot_reference.mjs \
 
 Direct `finance-query` remains diagnostic only. It must not be treated as the 90% accuracy reference when `goldenReference` is configured.
 
-The production runner requires a fresh `finance-query` tool call for every FinanceQA case. If OpenClaw answers from session context, skill text, or a `read` call without invoking `finance-query`, the case is marked `required_tool_missing` and counted as runner-invalid rather than a valid business pass.
+The production runner requires a fresh `finance-query` tool call for every FinanceQA case. If OpenClaw answers from session context, skill text, memory, or any other route without invoking `finance-query`, the case is marked `required_tool_missing` and counted as runner-invalid rather than a valid business pass.
+
+Treat runner-invalid cases as patrol-path failures first. They prove the test did not exercise the intended OpenClaw + FinanceQA tool-call chain, even when the final wording happens to contain plausible amounts. Do not use runner-invalid cases to judge FinanceQA calculation accuracy until the agent path is isolated enough to show a real `finance-query` call in the session evidence.
+
+FinanceQA schedules should pass `--require-tool finance-query` to the OpenClaw runner. This wraps the natural question with a patrol-only instruction requiring one fresh read-only tool call before answering. The original question is still stored in the case record; the wrapper is only for proving the agent path, not for changing golden references or boss-facing prompts.
 
 The same snapshot export also writes dynamic case variables to:
 
@@ -161,8 +165,16 @@ Interpret the report in layers:
 
 - `accuracy` / `businessAccuracy`: strict all-case metrics; runner-invalid cases count as failures so the headline cannot be inflated by cached answers.
 - `validAccuracy` / `validBusinessAccuracy`: accuracy after excluding runner-invalid cases. Use this to judge FinanceQA/OpenClaw answer quality among cases that actually called the required tool.
+- `runnerHealthPassed`: false when any case skipped the required tool, reused the wrong path, or failed before a valid agent answer.
+- `validThresholdPassed` / `validBusinessThresholdPassed`: threshold checks over valid cases only. These help separate real answer quality from runner contamination.
 - `failureTypes`: coarse scorer categories such as `agent_changed_amount`, `period_mismatch`, `missing_source`, or `required_tool_missing`.
 - `failureDiagnoses`: narrower evidence labels. For example, `agent_changed_after_direct_tool` means the direct `finance-query` baseline contained the expected amount, but the agent-visible answer did not.
+
+Response order for failures:
+
+1. Fix `runner_health` failures first, especially `required_tool_missing:finance-query`. A report with runner-invalid cases is not a clean business-accuracy sample.
+2. Fix `format_quality` scorer misses only when the answer is materially correct but uses acceptable wording, such as `应付余额` or `还有 0 元未付` for project payable.
+3. Escalate valid `core_accuracy` failures to FinanceQA/OpenClaw analysis, such as wrong period resolution or missing required reconciliation amounts.
 
 ## Rollback
 

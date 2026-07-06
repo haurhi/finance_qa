@@ -52,6 +52,9 @@ export interface RunSuiteResult {
     validBusinessPassed: number;
     validBusinessAccuracy: number;
     durationMs: number;
+    runnerHealthPassed: boolean;
+    validThresholdPassed: boolean;
+    validBusinessThresholdPassed: boolean;
     thresholdPassed: boolean;
     businessThresholdPassed: boolean;
   };
@@ -217,6 +220,9 @@ function aggregateScores(scores: CaseScore[], minAccuracy: number, durationMs: n
     validBusinessPassed,
     validBusinessAccuracy,
     durationMs,
+    runnerHealthPassed: invalid === 0,
+    validThresholdPassed: validTotal > 0 && validAccuracy >= minAccuracy,
+    validBusinessThresholdPassed: validTotal > 0 && validBusinessAccuracy >= minAccuracy,
     thresholdPassed: accuracy >= minAccuracy,
     businessThresholdPassed: businessAccuracy >= minAccuracy
   };

@@ -644,6 +644,23 @@ test("scoreCase accepts natural unpaid wording for payable term checks", () => {
   assert.deepEqual(score.failures, []);
 });
 
+test("scoreCase accepts payable balance wording for zero unpaid answers", () => {
+  const score = scoreCase({
+    id: "case-17a",
+    expected: {
+      mustContainAny: [["单项目应付", "项目应付", "应付未付"]],
+      amountLabelGroups: [["单项目应付", "项目应付", "应付未付", "未付款", "未付", "未付金额", "没付", "应付余额"]]
+    },
+    actual: {
+      source: "agent",
+      answer: "这个项目合同成本已经全部支付，当前应付余额为 0 元，还有 0 元未付。"
+    }
+  });
+
+  assert.equal(score.pass, true);
+  assert.deepEqual(score.failures, []);
+});
+
 test("scoreCase accepts natural receivable wording for receivable term checks", () => {
   const score = scoreCase({
     id: "case-18",

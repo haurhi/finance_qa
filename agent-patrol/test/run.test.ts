@@ -173,6 +173,9 @@ test("runSuite treats missing required agent tools as runner-invalid instead of 
   assert.equal(result.aggregate.passed, 0);
   assert.equal(result.aggregate.invalid, 1);
   assert.equal(result.aggregate.validTotal, 0);
+  assert.equal(result.aggregate.runnerHealthPassed, false);
+  assert.equal(result.aggregate.validThresholdPassed, false);
+  assert.equal(result.aggregate.validBusinessThresholdPassed, false);
   assert.equal(result.scores[0]?.invalid, true);
   assert.deepEqual(result.scores[0]?.failures, ["required_tool_missing:finance-query"]);
 });

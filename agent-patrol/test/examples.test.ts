@@ -73,6 +73,52 @@ test("live OpenClaw local runner fails closed unless explicitly enabled", () => 
   assert.match(result.stderr, /AGENT_PATROL_LIVE=1/);
 });
 
+test("live OpenClaw local runner can wrap questions with a required tool instruction", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-live-local-require-tool-"));
+  const binDir = path.join(dir, "bin");
+  const questionFile = path.join(dir, "question.txt");
+  const captureFile = path.join(dir, "argv.json");
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.writeFileSync(questionFile, "收入表中最新月份的营收是多少？", "utf8");
+  fs.writeFileSync(path.join(binDir, "openclaw"), `#!/usr/bin/env node
+const fs = require("fs");
+fs.writeFileSync(process.env.CAPTURE_FILE, JSON.stringify(process.argv.slice(2)));
+process.stdout.write(JSON.stringify({
+  result: {
+    payloads: [{ text: "ok" }],
+    meta: { agentMeta: { sessionId: "patrol-test" } }
+  }
+}));
+`, "utf8");
+  fs.chmodSync(path.join(binDir, "openclaw"), 0o755);
+
+  const result = spawnSync("node", [
+    "examples/runners/openclaw_local_runner.mjs",
+    "--question-file",
+    questionFile,
+    "--session-id",
+    "patrol-test",
+    "--require-tool",
+    "finance-query"
+  ], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      AGENT_PATROL_LIVE: "1",
+      CAPTURE_FILE: captureFile,
+      PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const argv = JSON.parse(fs.readFileSync(captureFile, "utf8")) as string[];
+  const message = argv[argv.indexOf("--message") + 1] ?? "";
+  assert.match(message, /必须先调用 `finance-query`/);
+  assert.match(message, /不要使用记忆、历史会话、已有上下文或猜测直接作答/);
+  assert.match(message, /收入表中最新月份的营收是多少？/);
+});
+
 test("financeqa dry-run wrapper blocks mirror prepare in production mode", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-production-guard-"));
   const envFile = path.join(dir, "financeqa.env");
@@ -244,6 +290,8 @@ test("financeqa preset includes natural boss wording aliases for scorer calibrat
 
   assert.ok(aliases("finance_project_payable_unpaid").includes("未付款合计"));
   assert.ok(aliases("finance_single_project_payable_unpaid").includes("未付金额"));
+  assert.ok(aliases("finance_single_project_payable_unpaid").includes("应付余额"));
+  assert.ok(aliases("finance_single_project_payable_unpaid").includes("未付"));
   assert.ok(aliases("finance_project_receivable_unpaid").includes("未回款"));
   assert.ok(aliases("finance_profit_cash_reconciliation").includes("银行净现金流"));
 });
@@ -1335,6 +1383,7 @@ test("financeqa low-frequency dry-run schedule examples only write local reports
   assert.match(contents, /uuidgen|\/proc\/sys\/kernel\/random\/uuid/);
   assert.doesNotMatch(contents, /date \+%F-%H/);
   assert.match(contents, /OPENCLAW_AGENT_CMD="/);
+  assert.match(contents, /--require-tool finance-query/);
   assert.match(contents, /FINANCEQA_MCP_READ_TOKEN_FILE/);
   assert.match(contents, /FINANCEQA_GOLDEN_CMD/);
   assert.match(contents, /financeqa_canonical_golden\.mjs/);
@@ -1436,6 +1485,61 @@ FINANCEQA_MCP_READ_TOKEN=test-token
   const log = fs.readFileSync(path.join(rootDir, "tmp/financeqa-dry-run/dry-run.log"), "utf8");
   assert.match(log, /report_status=generated/);
   assert.match(log, /business_status=threshold_failed/);
+});
+
+test("financeqa dry-run wrapper surfaces runner-invalid reports separately", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-patrol-dry-run-runner-invalid-"));
+  const binDir = path.join(dir, "bin");
+  const rootDir = path.join(dir, "root");
+  const envFile = path.join(dir, "financeqa-daily.env");
+  const npmStub = path.join(binDir, "npm");
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.mkdirSync(rootDir, { recursive: true });
+  fs.writeFileSync(npmStub, `#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--out" ]]; then
+    out="$2"
+    shift 2
+  else
+    shift
+  fi
+done
+mkdir -p "$out"
+cat > "$out/summary.json" <<'JSON'
+{"aggregate":{"total":3,"passed":1,"accuracy":0.3333333333333333,"invalid":1,"runnerHealthPassed":false,"thresholdPassed":false}}
+JSON
+exit 1
+`, "utf8");
+  fs.chmodSync(npmStub, 0o755);
+  fs.writeFileSync(envFile, `
+AGENT_PATROL_LIVE=1
+AGENT_PATROL_ROOT=${rootDir}
+AGENT_PATROL_OUTPUT_DIR=tmp/financeqa-dry-run
+AGENT_PATROL_RUN_ID=runner-invalid-report
+AGENT_PATROL_CONFIG=patrol.yaml
+AGENT_PATROL_SUITE=smoke
+AGENT_PATROL_CLEANUP_SESSIONS=0
+OPENCLAW_AGENT_CMD=stub-openclaw
+FINANCEQA_MCP_URL=http://127.0.0.1:1/mcp
+FINANCEQA_MCP_READ_TOKEN=test-token
+`, "utf8");
+
+  const result = spawnSync("bash", ["examples/schedules/run-financeqa-dry-run.sh"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
+      AGENT_PATROL_ENV_FILE: envFile
+    }
+  });
+
+  assert.equal(result.status, 1, result.stderr);
+  const log = fs.readFileSync(path.join(rootDir, "tmp/financeqa-dry-run/dry-run.log"), "utf8");
+  assert.match(log, /report_status=generated/);
+  assert.match(log, /business_status=runner_invalid/);
 });
 
 test("financeqa snapshot export example is read-only and table-whitelisted", () => {

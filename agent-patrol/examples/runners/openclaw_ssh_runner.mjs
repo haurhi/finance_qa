@@ -18,13 +18,14 @@ const sessionId = args.get("--session-id");
 const agent = args.get("--agent");
 const thinking = args.get("--thinking") ?? "off";
 const timeout = args.get("--timeout") ?? "180";
+const requiredTool = args.get("--require-tool");
 
 if (!host || !questionFile || !sessionId) {
-  console.error("usage: openclaw_ssh_runner.mjs --host <ssh-host> --question-file <path> --session-id <id> [--agent <id>]");
+  console.error("usage: openclaw_ssh_runner.mjs --host <ssh-host> --question-file <path> --session-id <id> [--agent <id>] [--require-tool <tool>]");
   process.exit(2);
 }
 
-const question = fs.readFileSync(questionFile, "utf8");
+const question = buildQuestion(fs.readFileSync(questionFile, "utf8"), requiredTool);
 const remoteArgs = ["openclaw", "agent", "--json", "--message", question, "--session-id", sessionId, "--thinking", thinking, "--timeout", timeout];
 if (agent) {
   remoteArgs.splice(2, 0, "--agent", agent);
@@ -46,4 +47,16 @@ process.exit(result.status ?? 1);
 
 function shellQuote(value) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+function buildQuestion(question, requiredTool) {
+  if (!requiredTool) return question;
+  return [
+    "[巡检要求]",
+    `这是一条只读巡检请求。回答前必须先调用 \`${requiredTool}\` 获取最新事实；不要使用记忆、历史会话、已有上下文或猜测直接作答。`,
+    "调用工具后，用自然语言回答下面的用户原问题；不要暴露工具原始 JSON 或内部 final_answer。",
+    "",
+    "[用户原问题]",
+    question
+  ].join("\n");
 }

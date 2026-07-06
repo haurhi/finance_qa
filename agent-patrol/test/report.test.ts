@@ -444,6 +444,14 @@ test("writeReport reports business accuracy separately from evidence quality", (
       accuracy: 0,
       businessPassed: 1,
       businessAccuracy: 1,
+      validTotal: 1,
+      validPassed: 0,
+      validAccuracy: 0,
+      validBusinessPassed: 1,
+      validBusinessAccuracy: 1,
+      runnerHealthPassed: true,
+      validThresholdPassed: false,
+      validBusinessThresholdPassed: true,
       thresholdPassed: false,
       businessThresholdPassed: true
     }
@@ -452,9 +460,13 @@ test("writeReport reports business accuracy separately from evidence quality", (
   const summary = fs.readFileSync(path.join(dir, "summary.md"), "utf8");
   assert.match(summary, /Accuracy: 0\.00%/);
   assert.match(summary, /Business Accuracy: 100\.00%/);
+  assert.match(summary, /Runner Health: passed/);
+  assert.match(summary, /Valid Business Threshold: passed/);
 
   const summaryJson = JSON.parse(fs.readFileSync(path.join(dir, "summary.json"), "utf8"));
   assert.equal(summaryJson.aggregate.businessPassed, 1);
   assert.equal(summaryJson.aggregate.businessAccuracy, 1);
+  assert.equal(summaryJson.aggregate.runnerHealthPassed, true);
+  assert.equal(summaryJson.aggregate.validBusinessThresholdPassed, true);
   assert.deepEqual(summaryJson.failedCases[0].failureCategories, ["source_evidence"]);
 });

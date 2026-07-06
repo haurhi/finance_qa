@@ -174,6 +174,20 @@ const fs = require("fs");
 const file = process.argv[1];
 try {
   const summary = JSON.parse(fs.readFileSync(file, "utf8"));
+  const runnerHealthPassed = summary?.aggregate?.runnerHealthPassed;
+  if (runnerHealthPassed === false) {
+    console.log("runner_invalid");
+    process.exit(0);
+  }
+  const validBusinessThresholdPassed = summary?.aggregate?.validBusinessThresholdPassed;
+  if (validBusinessThresholdPassed === true) {
+    console.log("valid_business_threshold_passed");
+    process.exit(0);
+  }
+  if (validBusinessThresholdPassed === false) {
+    console.log("valid_business_threshold_failed");
+    process.exit(0);
+  }
   const thresholdPassed = summary?.aggregate?.thresholdPassed;
   if (thresholdPassed === true) {
     console.log("threshold_passed");
@@ -241,7 +255,7 @@ fi
   if [[ -f "$summary_file" ]]; then
     report_status="generated"
     if business_status="$(read_business_status "$summary_file")"; then
-      if [[ "$npm_rc" -eq 1 && "$business_status" == "threshold_failed" && "$FAIL_ON_THRESHOLD" != "1" ]]; then
+      if [[ "$npm_rc" -eq 1 && ( "$business_status" == "threshold_failed" || "$business_status" == "valid_business_threshold_failed" ) && "$FAIL_ON_THRESHOLD" != "1" ]]; then
         service_rc=0
       fi
     else
