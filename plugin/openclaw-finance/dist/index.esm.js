@@ -1031,6 +1031,22 @@ function sourceUpdateAtomLine(atoms) {
   return "";
 }
 
+function sourceUpdateTimestamp(value) {
+  const match = String(value || "").match(/\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/);
+  return match?.[0] || "";
+}
+
+function replaceConflictingSourceUpdate(text, atoms) {
+  const expectedLine = sourceUpdateAtomLine(atoms);
+  const expectedTimestamp = sourceUpdateTimestamp(expectedLine);
+  if (!expectedLine || !expectedTimestamp) return text;
+  return String(text || "").replace(/(?:来源)?更新时间[：:]\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/g, (raw) => {
+    const current = String(raw || "").trim();
+    if (current === expectedLine && sourceUpdateTimestamp(current) === expectedTimestamp) return raw;
+    return expectedLine;
+  });
+}
+
 function hasConflictingFinanceFactAtoms(text, atoms) {
   const rawText = String(text || "");
   const expectedAmount = amountAtomValue((atoms || []).find((atom) => {
@@ -1119,16 +1135,19 @@ function hasAssistantToolCalls(message) {
 }
 
 function appendMissingFinanceFactAtoms(text, atoms, payload) {
-  let current = replaceConflictingHeadlineAmount(
-    replaceMalformedFinanceAmountAtoms(
-      replaceSingleConflictingPeriodToken(
-        replaceSingleConflictingPeriodRange(String(text || ""), atoms),
+  let current = replaceConflictingSourceUpdate(
+    replaceConflictingHeadlineAmount(
+      replaceMalformedFinanceAmountAtoms(
+        replaceSingleConflictingPeriodToken(
+          replaceSingleConflictingPeriodRange(String(text || ""), atoms),
+          atoms
+        ),
         atoms
       ),
-      atoms
+      atoms,
+      payload
     ),
-    atoms,
-    payload
+    atoms
   );
   if (payload && hasConflictingFinanceFactAtoms(current, atoms)) {
     current = canonicalFinanceAnswerFromPayload(payload) || current;

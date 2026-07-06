@@ -948,7 +948,7 @@ test("llm_output still patches stdout after before_message_write patched persist
     const event = {
       result: {
         payloads: [{
-          text: "2026年6月，项目结算收入（营收）：**936308.25万** 元。"
+          text: "2026年6月，项目结算收入（营收）：**936308.25万** 元。\n来源：《优集收入、成本计算表 - 上传.xlsx》的【26年Q2收入明细】\n更新时间：2026-06-03 18:39:21"
         }]
       }
     };
@@ -957,6 +957,7 @@ test("llm_output still patches stdout after before_message_write patched persist
     assert.match(event.result.payloads[0].text, /金额：936308\.25 元/);
     assert.doesNotMatch(event.result.payloads[0].text, /936308\.25万/);
     assert.match(event.result.payloads[0].text, /来源更新时间：2026-07-03 18:39:21/);
+    assert.doesNotMatch(event.result.payloads[0].text, /更新时间：2026-06-03 18:39:21/);
 
     const nextEvent = {
       payloads: [{
