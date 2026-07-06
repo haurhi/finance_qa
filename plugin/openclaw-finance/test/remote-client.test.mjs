@@ -970,6 +970,90 @@ test("llm_output still patches stdout after before_message_write patched persist
   });
 });
 
+test("finance fact guards are isolated by run when OpenClaw reuses the same session key", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks }) => {
+    const beforePrompt = hooks.get("before_prompt_build");
+    const llmOutput = hooks.get("llm_output");
+    const sessionKey = "agent:main:main";
+    const revenueRun = "run-revenue";
+    const payableRun = "run-payable";
+
+    await beforePrompt({
+      sessionKey,
+      runId: revenueRun,
+      prompt: "老板，按最新可见月份，帮我看下当月营收。",
+      messages: []
+    }, { sessionKey, runId: revenueRun });
+
+    await beforePrompt({
+      sessionKey,
+      runId: payableRun,
+      prompt: "25年至26年未付款的项目及对应金额有哪些？",
+      messages: []
+    }, { sessionKey, runId: payableRun });
+
+    const event = {
+      result: {
+        payloads: [{
+          text: "2026年6月营收为 93.63 万元。"
+        }]
+      }
+    };
+    llmOutput(event, { sessionKey, runId: revenueRun });
+
+    assert.match(event.result.payloads[0].text, /项目结算收入（营收）/);
+    assert.match(event.result.payloads[0].text, /金额：936308\.25 元/);
+    assert.match(event.result.payloads[0].text, /期间：2026-06/);
+    assert.match(event.result.payloads[0].text, /来源：《优集收入、成本计算表 - 上传\.xlsx》的【26年Q2收入明细】/);
+    assert.doesNotMatch(event.result.payloads[0].text, /项目应付|3538259\.73|2025-10~2026-06/);
+  }, {
+    toolPayload(args) {
+      const query = String(args.query || "");
+      if (query.includes("未付款") || query.includes("应付")) {
+        return {
+          success: true,
+          finance_facts: {
+            schema_version: "finance_facts.v1",
+            resolved_period: "2025-10~2026-06",
+            basis: "项目成本口径",
+            headline_metric: "项目应付（应付未付/未付款）",
+            headline_amount: 3538259.73,
+            source_note: "来源：《优集收入、成本计算表 - 上传.xlsx》的【成本-月度结算】",
+            source_update_note: "来源更新时间：2026-07-03 18:39:21",
+            required_atoms: [
+              "期间：2025-10~2026-06",
+              "口径：项目应付（应付未付/未付款）",
+              "金额：3538259.73 元",
+              "来源：《优集收入、成本计算表 - 上传.xlsx》的【成本-月度结算】",
+              "来源更新时间：2026-07-03 18:39:21"
+            ]
+          }
+        };
+      }
+      return {
+        success: true,
+        finance_facts: {
+          schema_version: "finance_facts.v1",
+          resolved_period: "2026-06",
+          basis: "项目口径",
+          headline_metric: "项目结算收入（营收）",
+          headline_amount: 936308.25,
+          source_note: "来源：《优集收入、成本计算表 - 上传.xlsx》的【26年Q2收入明细】",
+          source_update_note: "来源更新时间：2026-07-03 18:39:21",
+          required_atoms: [
+            "期间：2026-06",
+            "口径：项目结算收入（营收）",
+            "金额：936308.25 元",
+            "来源：《优集收入、成本计算表 - 上传.xlsx》的【26年Q2收入明细】",
+            "来源更新时间：2026-07-03 18:39:21"
+          ]
+        }
+      };
+    }
+  });
+});
+
 async function withServer(handler, run) {
   const server = http.createServer(async (req, res) => {
     let body = "";

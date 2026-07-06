@@ -12,6 +12,10 @@ function isRecord(value) {
   return value !== null && typeof value === "object";
 }
 
+function isAbortSignal(value) {
+  return isRecord(value) && typeof value.aborted === "boolean" && typeof value.addEventListener === "function";
+}
+
 function getPath(obj, pathParts) {
   let current = obj;
   for (const key of pathParts) {
@@ -467,6 +471,7 @@ let latestFinanceQuestionForTool = "";
 const latestFinanceQuestionBySession = new Map();
 const pendingFinanceFactAtomsBySession = new Map();
 const pendingFinanceFactPayloadsBySession = new Map();
+const financeRunKeysBySession = new Map();
 
 async function getMCPClient() {
   const config = loadPluginConfig(pluginRuntime);
@@ -930,28 +935,156 @@ function financeFactAtomsFromToolResult(message) {
   return financeFactAtomsFromPayload(payload);
 }
 
-function financeFactAtomSessionKey(event, ctx) {
-  return String(ctx?.sessionKey || event?.sessionKey || event?.message?.sessionKey || "__default__");
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (text) return text;
+  }
+  return "";
 }
 
-function setLatestFinanceQuestionForToolSession(key, latestQuestion) {
-  const sessionKey = String(key || "__default__");
+function financeScope(event, ctx) {
+  const runId = firstNonEmptyString(ctx?.runId, event?.runId, event?.message?.runId);
+  const sessionKey = firstNonEmptyString(ctx?.sessionKey, event?.sessionKey, event?.message?.sessionKey);
+  return {
+    runId,
+    sessionKey,
+    runKey: runId ? `run:${runId}` : "",
+    sessionStateKey: sessionKey ? `session:${sessionKey}` : "__default__",
+    sessionIndexKey: sessionKey || "__default__",
+    primaryKey: runId ? `run:${runId}` : (sessionKey ? `session:${sessionKey}` : "__default__")
+  };
+}
+
+function registerFinanceRunForSession(scope) {
+  if (!scope?.runKey) return;
+  const sessionKey = scope.sessionIndexKey || "__default__";
+  const runKeys = financeRunKeysBySession.get(sessionKey) || new Set();
+  runKeys.add(scope.runKey);
+  financeRunKeysBySession.set(sessionKey, runKeys);
+}
+
+function unregisterFinanceRunForSession(scope) {
+  if (!scope?.runKey) return;
+  const sessionKey = scope.sessionIndexKey || "__default__";
+  const runKeys = financeRunKeysBySession.get(sessionKey);
+  if (!runKeys) return;
+  runKeys.delete(scope.runKey);
+  if (runKeys.size) {
+    financeRunKeysBySession.set(sessionKey, runKeys);
+  } else {
+    financeRunKeysBySession.delete(sessionKey);
+  }
+}
+
+function activeFinanceRunKeysForSession(scope) {
+  const runKeys = financeRunKeysBySession.get(scope?.sessionIndexKey || "__default__");
+  if (!runKeys?.size) return [];
+  return [...runKeys].filter((key) => (
+    pendingFinanceFactAtomsBySession.has(key) ||
+    pendingFinanceFactPayloadsBySession.has(key) ||
+    latestFinanceQuestionBySession.has(key)
+  ));
+}
+
+function rememberPendingFinanceFacts(event, ctx, atoms, payload) {
+  const scope = financeScope(event, ctx);
+  if (!Array.isArray(atoms) || !atoms.length) {
+    clearPendingFinanceFacts(event, ctx);
+    return;
+  }
+  pendingFinanceFactAtomsBySession.set(scope.primaryKey, atoms);
+  pendingFinanceFactPayloadsBySession.set(scope.primaryKey, payload);
+  if (scope.runKey) {
+    registerFinanceRunForSession(scope);
+    pendingFinanceFactAtomsBySession.delete(scope.sessionStateKey);
+    pendingFinanceFactPayloadsBySession.delete(scope.sessionStateKey);
+  }
+}
+
+function clearPendingFinanceFacts(event, ctx) {
+  const scope = financeScope(event, ctx);
+  pendingFinanceFactAtomsBySession.delete(scope.primaryKey);
+  pendingFinanceFactPayloadsBySession.delete(scope.primaryKey);
+  if (scope.runKey) {
+    unregisterFinanceRunForSession(scope);
+  }
+}
+
+function pendingFinanceFactsForScope(event, ctx) {
+  const scope = financeScope(event, ctx);
+  const directAtoms = pendingFinanceFactAtomsBySession.get(scope.primaryKey);
+  if (directAtoms?.length) {
+    return {
+      atoms: directAtoms,
+      payload: pendingFinanceFactPayloadsBySession.get(scope.primaryKey),
+      key: scope.primaryKey,
+      scope
+    };
+  }
+  if (!scope.runKey) {
+    const runKeys = activeFinanceRunKeysForSession(scope);
+    if (runKeys.length === 1) {
+      const key = runKeys[0];
+      return {
+        atoms: pendingFinanceFactAtomsBySession.get(key),
+        payload: pendingFinanceFactPayloadsBySession.get(key),
+        key,
+        scope: { ...scope, runKey: key }
+      };
+    }
+    if (runKeys.length > 1) return null;
+  }
+  const sessionAtoms = pendingFinanceFactAtomsBySession.get(scope.sessionStateKey);
+  if (sessionAtoms?.length) {
+    return {
+      atoms: sessionAtoms,
+      payload: pendingFinanceFactPayloadsBySession.get(scope.sessionStateKey),
+      key: scope.sessionStateKey,
+      scope
+    };
+  }
+  return null;
+}
+
+function setLatestFinanceQuestionForToolScope(event, ctx, latestQuestion) {
+  const scope = financeScope(event, ctx);
   const question = String(latestQuestion || "").trim();
   if (question) {
-    latestFinanceQuestionBySession.set(sessionKey, question);
+    latestFinanceQuestionBySession.set(scope.primaryKey, question);
+    if (scope.runKey) {
+      registerFinanceRunForSession(scope);
+      latestFinanceQuestionBySession.delete(scope.sessionStateKey);
+    }
   } else {
-    latestFinanceQuestionBySession.delete(sessionKey);
+    latestFinanceQuestionBySession.delete(scope.primaryKey);
+    if (scope.runKey) unregisterFinanceRunForSession(scope);
   }
-  latestFinanceQuestionForTool = question;
+  latestFinanceQuestionForTool = scope.runKey ? "" : question;
 }
 
 function takeLatestFinanceQuestionForTool(ctx) {
-  const key = financeFactAtomSessionKey(undefined, ctx);
-  if (latestFinanceQuestionBySession.has(key)) {
-    const question = latestFinanceQuestionBySession.get(key) || "";
-    latestFinanceQuestionBySession.delete(key);
+  const scope = financeScope(undefined, ctx);
+  if (latestFinanceQuestionBySession.has(scope.primaryKey)) {
+    const question = latestFinanceQuestionBySession.get(scope.primaryKey) || "";
+    latestFinanceQuestionBySession.delete(scope.primaryKey);
     if (latestFinanceQuestionForTool === question) latestFinanceQuestionForTool = "";
     return question;
+  }
+  if (!scope.runKey) {
+    const runKeys = activeFinanceRunKeysForSession(scope).filter((key) => latestFinanceQuestionBySession.has(key));
+    if (runKeys.length === 1) {
+      const key = runKeys[0];
+      const question = latestFinanceQuestionBySession.get(key) || "";
+      latestFinanceQuestionBySession.delete(key);
+      return question;
+    }
+    if (latestFinanceQuestionBySession.has(scope.sessionStateKey)) {
+      const question = latestFinanceQuestionBySession.get(scope.sessionStateKey) || "";
+      latestFinanceQuestionBySession.delete(scope.sessionStateKey);
+      if (latestFinanceQuestionForTool === question) latestFinanceQuestionForTool = "";
+      return question;
+    }
   }
   const fallback = latestFinanceQuestionForTool;
   latestFinanceQuestionForTool = "";
@@ -1439,7 +1572,8 @@ function createFinanceTool(name, description, parameters, toolCtx) {
     description,
     parameters,
     async execute(_toolCallId, rawParams, runtimeCtx) {
-      const protectedQuestion = name === "finance-query" ? takeLatestFinanceQuestionForTool(runtimeCtx || toolCtx) : "";
+      const executionCtx = isRecord(runtimeCtx) && !isAbortSignal(runtimeCtx) ? runtimeCtx : toolCtx;
+      const protectedQuestion = name === "finance-query" ? takeLatestFinanceQuestionForTool(executionCtx) : "";
       const rawParamsObject = rawParams && typeof rawParams === "object" ? rawParams : {};
       const rawQuery = name === "finance-query" ? financeQuestionText(rawParamsObject.query || "") : "";
       const shouldUseProtectedQuestion = protectedQuestion && (
@@ -1457,7 +1591,15 @@ function createFinanceTool(name, description, parameters, toolCtx) {
           }
           : rawParams)
         : rawParams;
-      return callFinanceTool(name, params);
+      const result = await callFinanceTool(name, params);
+      if (name === "finance-query") {
+        const payload = compactFinancePayload(parseToolResultPayload(result));
+        const atoms = financeFactAtomsFromPayload(payload);
+        if (atoms.length) {
+          rememberPendingFinanceFacts(undefined, executionCtx, atoms, payload);
+        }
+      }
+      return result;
     }
   };
 }
@@ -1533,22 +1675,18 @@ const plugin = {
     ), { name: "finance-sync" });
 
     api.on("before_prompt_build", async (event, ctx) => {
-      const key = financeFactAtomSessionKey(event, ctx);
       const latestQuestion = financeQuestionForPromptEvent(event);
-      setLatestFinanceQuestionForToolSession(key, latestQuestion || "");
+      setLatestFinanceQuestionForToolScope(event, ctx, latestQuestion || "");
       if (!latestQuestion) {
-        pendingFinanceFactAtomsBySession.delete(key);
-        pendingFinanceFactPayloadsBySession.delete(key);
+        clearPendingFinanceFacts(event, ctx);
         return undefined;
       }
       const financeFactBundle = await financeQuerySystemFactBundle(latestQuestion);
       const atoms = financeFactAtomsFromPayload(financeFactBundle.payload);
       if (atoms.length) {
-        pendingFinanceFactAtomsBySession.set(key, atoms);
-        pendingFinanceFactPayloadsBySession.set(key, financeFactBundle.payload);
+        rememberPendingFinanceFacts(event, ctx, atoms, financeFactBundle.payload);
       } else {
-        pendingFinanceFactAtomsBySession.delete(key);
-        pendingFinanceFactPayloadsBySession.delete(key);
+        clearPendingFinanceFacts(event, ctx);
       }
       return {
         prependSystemContext: mustCallFinanceQuerySystemContext(latestQuestion, financeFactBundle.text)
@@ -1556,33 +1694,32 @@ const plugin = {
     });
 
     api.on("llm_output", (event, ctx) => {
-      const key = financeFactAtomSessionKey(event, ctx);
-      const atoms = pendingFinanceFactAtomsBySession.get(key);
-      const payload = pendingFinanceFactPayloadsBySession.get(key);
+      const bundle = pendingFinanceFactsForScope(event, ctx);
+      const atoms = bundle?.atoms;
+      const payload = bundle?.payload;
       if (!atoms?.length) return undefined;
       patchAssistantTextsWithFinanceFactAtoms(event, atoms, payload);
-      pendingFinanceFactAtomsBySession.delete(key);
-      pendingFinanceFactPayloadsBySession.delete(key);
+      pendingFinanceFactAtomsBySession.delete(bundle.key);
+      pendingFinanceFactPayloadsBySession.delete(bundle.key);
+      unregisterFinanceRunForSession(bundle.scope);
       return undefined;
     });
 
     api.on("before_message_write", (event, ctx) => {
-      const key = financeFactAtomSessionKey(event, ctx);
       const message = event?.message;
       if (message?.role === "toolResult") {
         const atoms = financeFactAtomsFromToolResult(message);
         if (atoms.length) {
-          pendingFinanceFactAtomsBySession.set(key, atoms);
-          pendingFinanceFactPayloadsBySession.set(key, compactFinancePayload(parseToolResultPayload(message)));
+          rememberPendingFinanceFacts(event, ctx, atoms, compactFinancePayload(parseToolResultPayload(message)));
         } else if (message.toolName === "finance-query") {
-          pendingFinanceFactAtomsBySession.delete(key);
-          pendingFinanceFactPayloadsBySession.delete(key);
+          clearPendingFinanceFacts(event, ctx);
         }
         return undefined;
       }
       if (message?.role !== "assistant") return undefined;
-      const atoms = pendingFinanceFactAtomsBySession.get(key);
-      const payload = pendingFinanceFactPayloadsBySession.get(key);
+      const bundle = pendingFinanceFactsForScope(event, ctx);
+      const atoms = bundle?.atoms;
+      const payload = bundle?.payload;
       if (!atoms?.length) return undefined;
       const patched = patchAssistantMessageWithFinanceFactAtoms(message, atoms, payload);
       if (!patched) return undefined;
