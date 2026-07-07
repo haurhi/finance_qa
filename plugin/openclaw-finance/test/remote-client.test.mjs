@@ -226,7 +226,7 @@ test("finance-query protected question is scoped per OpenClaw session", async ()
   });
 });
 
-test("finance prompt hook extracts original question from patrol wrapper", async () => {
+test("finance prompt hook extracts original question from patrol wrapper without prefetching facts", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
     const rawUserQuestion = "按项目应收口径，2025年10月到上个完整自然月月底未回款合计多少？";
@@ -242,8 +242,7 @@ test("finance prompt hook extracts original question from patrol wrapper", async
       messages: [{ role: "user", content: [{ type: "text", text: patrolPrompt }] }]
     }, { sessionKey: "finance-patrol-original-question" });
 
-    assert.equal(toolCalls[0].arguments.query, rawUserQuestion);
-    assert.doesNotMatch(toolCalls[0].arguments.query, /巡检要求|只读巡检请求/);
+    assert.equal(toolCalls.length, 0);
 
     await tools.get("finance-query").execute("call-rewritten-patrol-query", {
       query: "按项目应收口径，2025年10月到2026年6月底未回款合计多少？"

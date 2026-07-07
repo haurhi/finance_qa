@@ -689,6 +689,32 @@ function financeQuestionForPromptEvent(event) {
   return "";
 }
 
+function requiresObservableFinanceToolCallText(rawText) {
+  const text = userVisibleText(rawText);
+  if (!text || !/finance-query/.test(text)) return false;
+  return /(巡检要求|只读巡检请求|回答前必须先调用|必须先调用\s*`?finance-query`?|required tool|require-tool)/i.test(text);
+}
+
+function eventRequiresObservableFinanceToolCall(event) {
+  if (requiresObservableFinanceToolCallText(event?.prompt || "")) return true;
+  if (!Array.isArray(event?.messages)) return false;
+  for (let i = event.messages.length - 1; i >= 0 && i >= event.messages.length - 6; i--) {
+    const entry = event.messages[i];
+    const message = entry?.message && typeof entry.message === "object" ? entry.message : entry;
+    if (message?.role !== "user") continue;
+    if (requiresObservableFinanceToolCallText(messageContentText(message.content))) return true;
+  }
+  return false;
+}
+
+function observableFinanceToolCallContext() {
+  return [
+    "巡检强制工具调用：本轮没有预置 finance-query 结果。",
+    "回答前必须实际调用 OpenClaw 工具 `finance-query` 获取最新事实；禁止根据本提示、记忆、历史会话、缓存摘要或旧工具结果直接作答。",
+    "实际调用后，金额、期间、口径、来源和来源更新时间必须来自该次 finance-query 结果。"
+  ].join("\n");
+}
+
 function mustCallFinanceQuerySystemContext(latestQuestion, currentFacts) {
   const lines = [
     "财务问答系统规则：",
@@ -1680,6 +1706,12 @@ const plugin = {
       if (!latestQuestion) {
         clearPendingFinanceFacts(event, ctx);
         return undefined;
+      }
+      if (eventRequiresObservableFinanceToolCall(event)) {
+        clearPendingFinanceFacts(event, ctx);
+        return {
+          prependSystemContext: mustCallFinanceQuerySystemContext(latestQuestion, observableFinanceToolCallContext())
+        };
       }
       const financeFactBundle = await financeQuerySystemFactBundle(latestQuestion);
       const atoms = financeFactAtomsFromPayload(financeFactBundle.payload);
