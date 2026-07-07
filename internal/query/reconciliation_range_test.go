@@ -221,3 +221,62 @@ func TestCompareBookProfitAndBankNetInflowUsesReconciliationRoute(t *testing.T) 
 		t.Fatalf("message should answer both book and bank in one reconciliation response, got: %s", res.Message)
 	}
 }
+
+func TestCompareBookProfitAndBankNetInflowStatesNominalDifference(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "reconciliation-difference-phrase.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	stmts := []string{
+		`CREATE TABLE income_statement (company TEXT, period TEXT, item_name TEXT, current_amount REAL, cumulative_amount REAL)`,
+		`CREATE TABLE bank_statement (company TEXT, transaction_date TEXT, credit_amount REAL, debit_amount REAL, counterparty_name TEXT, summary TEXT)`,
+		`CREATE TABLE journal (company TEXT, period TEXT, voucher_date TEXT, voucher_no TEXT, account_code TEXT, account_name TEXT, summary TEXT, direction TEXT, amount REAL, debit_amount REAL, credit_amount REAL, counterparty TEXT)`,
+		`CREATE TABLE balance_detail (company TEXT, year INTEGER, period TEXT, account_code TEXT, account_name TEXT, opening_debit REAL, opening_credit REAL, current_debit REAL, current_credit REAL, closing_debit REAL, closing_credit REAL)`,
+		`CREATE TABLE balance_sheet (company TEXT, period TEXT, account_code TEXT, account_name TEXT, opening_balance REAL, closing_balance REAL)`,
+		`INSERT INTO income_statement(company, period, item_name, current_amount, cumulative_amount) VALUES
+		 ('测试公司','2026-03','一、营业收入',1000,3000),
+		 ('测试公司','2026-03','五、净利润',200,600)`,
+		`INSERT INTO journal(company, period, voucher_date, voucher_no, account_code, account_name, summary, direction, amount, debit_amount, credit_amount, counterparty) VALUES
+		 ('测试公司','2026-03','2026-03-31','记-0001','600101','技术服务费','确认3月收入','贷',1000,0,1000,'客户A'),
+		 ('测试公司','2026-03','2026-03-31','记-0002','640101','营业成本','确认3月成本','借',800,800,0,'供应商A')`,
+		`INSERT INTO bank_statement(company, transaction_date, credit_amount, debit_amount, counterparty_name, summary) VALUES
+		 ('测试公司','2026-03-20',650,0,'客户A','3月回款'),
+		 ('测试公司','2026-03-25',0,900,'供应商A','3月付款')`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec stmt failed: %v", err)
+		}
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.Query("上个月银行净流入和账上净利润差多少？")
+	if !res.Success {
+		t.Fatalf("query failed: message=%s data=%+v", res.Message, res.Data)
+	}
+	if !strings.Contains(res.Message, "名义差额") || !strings.Contains(res.Message, "450.00") {
+		t.Fatalf("message should explicitly state nominal difference 450.00, got: %s", res.Message)
+	}
+	diff, ok := res.Data["difference_summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("difference_summary missing: data=%+v", res.Data)
+	}
+	if got := diff["nominal_difference"]; got != float64(450) {
+		t.Fatalf("nominal_difference = %v, want 450; difference_summary=%+v", got, diff)
+	}
+	facts, ok := res.Data["finance_facts"].(map[string]any)
+	if !ok {
+		t.Fatalf("finance_facts missing: data=%+v", res.Data)
+	}
+	if got := anyToFloat64(facts["headline_amount"]); got != float64(450) {
+		t.Fatalf("finance_facts.headline_amount = %v, want 450; facts=%+v", got, facts)
+	}
+}

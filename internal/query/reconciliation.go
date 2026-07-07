@@ -77,6 +77,11 @@ func (e *Engine) queryReconciliation(question, from, to string) Result {
 
 	msg := e.composeBossReconciliationMessage(periodLabel, book, bookSource, cash, bridge, highlights)
 	data := buildReconciliationResultData(periodLabel, book, bookSource, cash, highlights, bridgeMap)
+	if shouldExposeNominalReconciliationDifference(question) {
+		nominalDifference := reconciliationNominalDifference(book, cash)
+		msg = withReconciliationNominalDifferenceLine(msg, book, cash, nominalDifference)
+		annotateReconciliationNominalDifference(data, book, cash, nominalDifference)
+	}
 	if adjusted {
 		data["period_adjusted"] = true
 		data["requested_period"] = requestedPeriodLabel

@@ -64,6 +64,33 @@ func shouldAppendReconciliationHighlights(cash *accounting.CashPerspective, brid
 	return math.Abs(reconciliationResidualGap(cash, bridge)) > 0.01
 }
 
+func shouldExposeNominalReconciliationDifference(question string) bool {
+	return containsAny(question, []string{"差多少", "相差", "差额", "差异"})
+}
+
+func reconciliationNominalDifference(book monthlyBookView, cash *accounting.CashPerspective) float64 {
+	if cash == nil {
+		return round2(book.NetProfit)
+	}
+	return round2(book.NetProfit - cash.Net)
+}
+
+func withReconciliationNominalDifferenceLine(message string, book monthlyBookView, cash *accounting.CashPerspective, nominalDifference float64) string {
+	if cash == nil {
+		return message
+	}
+	line := fmt.Sprintf("按名义差额看：账上净利润 %.2f 元 - 银行净流入 %.2f 元 = %.2f 元；这个差额只作对账入口，不能直接等同经营好坏。", book.NetProfit, cash.Net, nominalDifference)
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return line
+	}
+	parts := strings.SplitN(message, "\n", 2)
+	if len(parts) == 1 {
+		return parts[0] + "\n" + line
+	}
+	return parts[0] + "\n" + line + "\n" + parts[1]
+}
+
 func reconciliationResidualGap(cash *accounting.CashPerspective, bridge *analysis.ProfitCashBridge) float64 {
 	if bridge == nil || cash == nil {
 		return 0

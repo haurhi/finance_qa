@@ -77,3 +77,26 @@ func buildReconciliationResultData(period string, book monthlyBookView, bookSour
 		},
 	}
 }
+
+func annotateReconciliationNominalDifference(data map[string]any, book monthlyBookView, cash *accounting.CashPerspective, nominalDifference float64) {
+	if data == nil || cash == nil {
+		return
+	}
+	data["headline_metric"] = "账上净利润-银行净流入名义差额"
+	data["headline_amount"] = nominalDifference
+	data["metrics"] = map[string]any{
+		"账上净利润":       round2(book.NetProfit),
+		"银行净流入":       round2(cash.Net),
+		"名义差额":        nominalDifference,
+		"账上净利润-银行净流入": nominalDifference,
+	}
+	if summary, ok := data["difference_summary"].(map[string]any); ok {
+		summary["book_net_profit"] = round2(book.NetProfit)
+		summary["bank_net_inflow"] = round2(cash.Net)
+		summary["nominal_difference"] = nominalDifference
+	}
+	data["explanation_hints"] = []string{
+		"名义差额按账上净利润减银行净流入计算。",
+		"账上利润和银行流水不是同一口径，差额只作对账入口。",
+	}
+}

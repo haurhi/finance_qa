@@ -51,11 +51,22 @@ func looksLikePeriodOnlyEntity(entity string) bool {
 	if trimmed == "" {
 		return false
 	}
+	if looksLikeLooseYearRangeEntity(trimmed) {
+		return true
+	}
 	stripped := stripKnownPeriodTokens(trimmed)
 	if strings.TrimSpace(stripped) == "" && strings.TrimSpace(stripped) != strings.TrimSpace(trimmed) {
 		return true
 	}
 	return looksLikeIsolatedYearToken(trimmed)
+}
+
+func looksLikeLooseYearRangeEntity(entity string) bool {
+	compact := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(entity)), ""))
+	if compact == "" {
+		return false
+	}
+	return regexp.MustCompile(`^(?:20)?\d{2}年?(?:到|至|~|-)(?:20)?\d{2}年?$`).MatchString(compact)
 }
 
 func trimEntityNoiseSuffixes(entity string) string {

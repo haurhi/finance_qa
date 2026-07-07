@@ -168,6 +168,9 @@ func looksLikeTemporalMetricEntity(entity string) bool {
 	if looksLikePeriodOnlyEntity(entity) {
 		return true
 	}
+	if looksLikeLooseYearRangeEntity(entity) {
+		return true
+	}
 	if regexp.MustCompile(`^q[1-4]$`).MatchString(normalized) {
 		return true
 	}

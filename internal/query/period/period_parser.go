@@ -173,7 +173,7 @@ func extractExplicitMonthRange(q string, anchorYear int) (string, string, bool) 
 }
 
 func extractExplicitStartToRelativeMonthEndRange(q string, anchor time.Time) (string, string, bool) {
-	re := regexp.MustCompile(`(?:从|自)?\s*(20\d{2}|\d{2}|今年|本年|去年)\s*年?\s*([0-1]?\d|[一二三四五六七八九十两]{1,3})月?(?:底|末)?\s*(?:起|开始)?\s*(?:到|至|截至|截止)\s*(上一个完整自然月|上个完整自然月|上个月|上月)(?:月底|月末|底|末)?`)
+	re := regexp.MustCompile(`(?:从|自)?\s*(20\d{2}|\d{2}|今年|本年|去年)\s*年?\s*([0-1]?\d|[一二三四五六七八九十两]{1,3})月?(?:底|末)?\s*(?:起|开始)?\s*(?:到|至|截至|截止)\s*(上一个完整自然月|上个完整自然月|上一个完整月份|上个完整月份|上一个完整月|上个完整月|上个月|上月)(?:月底|月末|底|末)?`)
 	m := re.FindStringSubmatch(q)
 	if len(m) != 4 {
 		return "", "", false

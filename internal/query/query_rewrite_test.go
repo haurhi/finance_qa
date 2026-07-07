@@ -154,6 +154,22 @@ func TestBuildQuerySpecSupportsFourDigitLooseYearRange(t *testing.T) {
 	}
 }
 
+func TestBuildQuerySpecRejectsLooseYearRangeAsSyntheticEntity(t *testing.T) {
+	anchor := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)
+
+	spec := BuildQuerySpec("25年到26年有哪些项目还有未付款？", anchor)
+
+	if spec.Entity != "" {
+		t.Fatalf("Entity = %q, want empty company-scope entity", spec.Entity)
+	}
+	if spec.NeedsContractDimension {
+		t.Fatalf("NeedsContractDimension = true, want company-scope aggregate")
+	}
+	if spec.PeriodFrom != "2025-01" || spec.PeriodTo != "2026-06" {
+		t.Fatalf("period = %s~%s, want 2025-01~2026-06", spec.PeriodFrom, spec.PeriodTo)
+	}
+}
+
 func TestBuildQuerySpecCarriesBossRewrite(t *testing.T) {
 	anchor := time.Date(2026, time.April, 25, 0, 0, 0, 0, time.UTC)
 
