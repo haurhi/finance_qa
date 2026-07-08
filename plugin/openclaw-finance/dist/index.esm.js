@@ -1206,7 +1206,7 @@ function replaceConflictingSourceUpdate(text, atoms) {
   const expectedLine = sourceUpdateAtomLine(atoms);
   const expectedTimestamp = sourceUpdateTimestamp(expectedLine);
   if (!expectedLine || !expectedTimestamp) return text;
-  return String(text || "").replace(/(?:来源)?更新时间[：:]\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/g, (raw) => {
+  return String(text || "").replace(/(?:来源)?更新时间[：:]\s*\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2}:\d{2})?/g, (raw) => {
     const current = String(raw || "").trim();
     if (current === expectedLine && sourceUpdateTimestamp(current) === expectedTimestamp) return raw;
     return expectedLine;
@@ -1226,7 +1226,7 @@ function hasConflictingFinanceFactAtoms(text, atoms) {
   }
   const expectedSourceUpdate = sourceUpdateAtomLine(atoms);
   if (expectedSourceUpdate) {
-    for (const match of rawText.matchAll(/来源更新时间[：:]\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/g)) {
+    for (const match of rawText.matchAll(/(?:来源)?更新时间[：:]\s*\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2}:\d{2})?/g)) {
       if (match[0].trim() !== expectedSourceUpdate) return true;
     }
   }
