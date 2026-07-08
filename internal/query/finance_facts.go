@@ -249,6 +249,13 @@ func financeFactRequiredAtoms(facts map[string]any) []string {
 	if amount, ok := financeFactAnyNumber(facts["headline_amount"]); ok {
 		atoms = append(atoms, fmt.Sprintf("金额：%.2f 元", amount))
 	}
+	if metrics, ok := facts["metrics"].(map[string]any); ok {
+		for _, key := range []string{"现金流入", "现金流出", "净现金流"} {
+			if amount, ok := financeFactAnyNumber(metrics[key]); ok {
+				atoms = append(atoms, fmt.Sprintf("%s：%.2f 元", key, amount))
+			}
+		}
+	}
 	for _, key := range []string{"source_note", "source_update_note"} {
 		if note := strings.TrimSpace(anyToString(facts[key])); note != "" {
 			atoms = append(atoms, note)

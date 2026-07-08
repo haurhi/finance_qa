@@ -263,6 +263,15 @@ func TestFinalizeQueryResultBuildsCashFlowFinanceFacts(t *testing.T) {
 	if !containsString(required, "金额：-633859.33 元") {
 		t.Fatalf("required_atoms = %#v, want cash flow amount atom", required)
 	}
+	for _, want := range []string{
+		"现金流入：2613554.53 元",
+		"现金流出：3247413.86 元",
+		"净现金流：-633859.33 元",
+	} {
+		if !containsString(required, want) {
+			t.Fatalf("required_atoms = %#v, want %q", required, want)
+		}
+	}
 }
 
 func TestFinalizeQueryResultLabelsSourceConstraintBasis(t *testing.T) {
