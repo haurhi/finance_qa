@@ -489,6 +489,147 @@ func TestProjectPayableRangeToLastCompleteNaturalMonthKeepsRequestedPeriod(t *te
 	}
 }
 
+func TestProjectPayableRangeToLastCompleteMonthUsesLatestProjectDataCutoff(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	stmts := []string{
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-005','补充供应商','补充项目')`,
+		`INSERT INTO fin_cost_settlements(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, paid_amount, is_invoiced, invoice_amount) VALUES ('C-005','2026-06','contract_revenue_cost','成本-月度结算',100,0,'是',100)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec stmt failed: %v\n%s", err, stmt)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司")
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.Query("按项目成本口径，从2025年10月到上个完整月月底，未付款合计是多少？")
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["source_priority"]; got != "contract_first" {
+		t.Fatalf("source_priority = %v, want contract_first; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := anyToFloat64(res.Data["total"]); got != 600 {
+		t.Fatalf("total = %v, want project payable through latest project data month; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	spec, ok := res.Data["query_spec"].(map[string]any)
+	if !ok {
+		t.Fatalf("query_spec missing: %+v", res.Data)
+	}
+	if got := spec["period_from"]; got != "2025-10" {
+		t.Fatalf("query_spec.period_from = %v, want 2025-10", got)
+	}
+	if got := spec["period_to"]; got != "2026-06" {
+		t.Fatalf("query_spec.period_to = %v, want latest project data cutoff 2026-06", got)
+	}
+	if !strings.Contains(res.Message, "2025-10~2026-06") || !strings.Contains(res.Message, "项目应付（应付未付/未付款） 600.00") {
+		t.Fatalf("message should use latest project data cutoff and project payable amount, got %q", res.Message)
+	}
+}
+
+func TestProjectAggregateRangeToLastCompleteMonthUsesSingleProjectDataCutoff(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	stmts := []string{
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-004','补充客户','补充开票项目')`,
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-005','补充供应商','补充付款项目')`,
+		`INSERT INTO fin_fund_income(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, received_amount, is_invoiced, invoice_amount) VALUES ('C-004','2026-06','contract_fund_income','26年Q2收入明细',500,100,'是',300)`,
+		`INSERT INTO fin_cost_settlements(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, paid_amount, is_invoiced, invoice_amount) VALUES ('C-005','2026-06','contract_revenue_cost','成本-月度结算',100,0,'是',100)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec stmt failed: %v\n%s", err, stmt)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司")
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	tests := []struct {
+		name   string
+		query  string
+		metric string
+		total  float64
+	}{
+		{
+			name:   "project receivable",
+			query:  "从项目应收口径看，2025年10月到上个完整月月底的未回款合计是多少？",
+			metric: "应收",
+			total:  1000,
+		},
+		{
+			name:   "invoiced receivable",
+			query:  "2025年10月到上个完整月月底，所有项目已开票未回款是多少？",
+			metric: "已开票未回款",
+			total:  600,
+		},
+		{
+			name:   "project payable",
+			query:  "按项目成本口径，从2025年10月到上个完整月月底，未付款合计是多少？",
+			metric: "应付",
+			total:  600,
+		},
+		{
+			name:   "received invoice unpaid",
+			query:  "从项目口径看，2025年10月到现在，已收票但未付款还有多少？",
+			metric: "已收票未付款",
+			total:  400,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := engine.Query(tt.query)
+			if !res.Success {
+				t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+			}
+			if got := res.Data["source_priority"]; got != "contract_first" {
+				t.Fatalf("source_priority = %v, want contract_first; message=%s data=%+v", got, res.Message, res.Data)
+			}
+			if got := res.Data["metric"]; got != tt.metric {
+				t.Fatalf("metric = %v, want %s; message=%s data=%+v", got, tt.metric, res.Message, res.Data)
+			}
+			if got := anyToFloat64(res.Data["total"]); got != tt.total {
+				t.Fatalf("total = %v, want %v; message=%s data=%+v", got, tt.total, res.Message, res.Data)
+			}
+			spec, ok := res.Data["query_spec"].(map[string]any)
+			if !ok {
+				t.Fatalf("query_spec missing: %+v", res.Data)
+			}
+			if got := spec["period_from"]; got != "2025-10" {
+				t.Fatalf("query_spec.period_from = %v, want 2025-10", got)
+			}
+			if got := spec["period_to"]; got != "2026-06" {
+				t.Fatalf("query_spec.period_to = %v, want shared latest project data cutoff 2026-06; message=%s data=%+v", got, res.Message, res.Data)
+			}
+			if !strings.Contains(res.Message, "2025-10~2026-06") {
+				t.Fatalf("message should use shared project cutoff, got %q", res.Message)
+			}
+		})
+	}
+}
+
 func TestAllProjectPayableQuestionIsNotHijackedByPaymentCounterparty(t *testing.T) {
 	dbPath := buildContractARAPPriorityDB(t)
 	db, err := sql.Open("sqlite", dbPath)

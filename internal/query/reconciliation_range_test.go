@@ -279,4 +279,47 @@ func TestCompareBookProfitAndBankNetInflowStatesNominalDifference(t *testing.T) 
 	if got := anyToFloat64(facts["headline_amount"]); got != float64(450) {
 		t.Fatalf("finance_facts.headline_amount = %v, want 450; facts=%+v", got, facts)
 	}
+	if got := anyToString(facts["headline_metric"]); got != "账上净利润-银行净流入名义差额" {
+		t.Fatalf("finance_facts.headline_metric = %q, want fixed reconciliation metric; facts=%+v", got, facts)
+	}
+	metrics, ok := facts["metrics"].(map[string]any)
+	if !ok {
+		t.Fatalf("finance_facts.metrics missing: facts=%+v", facts)
+	}
+	for key, want := range map[string]float64{
+		"银行净流入":       -250,
+		"账上净利润":       200,
+		"差异金额":        450,
+		"账上净利润-银行净流入": 450,
+	} {
+		if got := anyToFloat64(metrics[key]); got != want {
+			t.Fatalf("finance_facts.metrics[%s] = %v, want %v; metrics=%+v facts=%+v", key, got, want, metrics, facts)
+		}
+	}
+	requiredAtoms := anySourceStringSlice(facts["required_atoms"])
+	for _, want := range []string{
+		"银行净流入：-250.00 元",
+		"账上净利润：200.00 元",
+		"差异金额：450.00 元",
+	} {
+		if !containsString(requiredAtoms, want) {
+			t.Fatalf("finance_facts.required_atoms missing %q: %#v", want, requiredAtoms)
+		}
+	}
+	reconcileFacts, ok := res.Data["cash_profit_reconciliation"].(map[string]any)
+	if !ok {
+		t.Fatalf("cash_profit_reconciliation missing: data=%+v", res.Data)
+	}
+	for key, want := range map[string]float64{
+		"bank_net_flow":     -250,
+		"book_net_profit":   200,
+		"difference_amount": 450,
+	} {
+		if got := anyToFloat64(reconcileFacts[key]); got != want {
+			t.Fatalf("cash_profit_reconciliation[%s] = %v, want %v; facts=%+v", key, got, want, reconcileFacts)
+		}
+	}
+	if got := anyToString(reconcileFacts["formula"]); got != "账上净利润 - 银行净流入" {
+		t.Fatalf("cash_profit_reconciliation.formula = %q, want fixed formula; facts=%+v", got, reconcileFacts)
+	}
 }

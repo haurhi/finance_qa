@@ -1226,6 +1226,149 @@ function hasConflictingFinanceFactAtoms(text, atoms) {
   return false;
 }
 
+function hasSuccessfulFinanceFactPayload(payload) {
+  const compact = compactFinancePayload(payload);
+  if (!compact || typeof compact !== "object") return false;
+  if (payload && typeof payload === "object" && payload.success === false) return false;
+  if (compact.total !== undefined && compact.total !== null && compact.total !== "") {
+    const total = Number(String(compact.total).replace(/,/g, ""));
+    if (Number.isFinite(total)) return true;
+  }
+  const metrics = compact.metrics && typeof compact.metrics === "object" ? compact.metrics : null;
+  if (metrics) {
+    for (const value of Object.values(metrics)) {
+      const amount = Number(String(value).replace(/,/g, ""));
+      if (Number.isFinite(amount)) return true;
+    }
+  }
+  return false;
+}
+
+function hasFinanceFactContradictingDenial(text, payload) {
+  if (!hasSuccessfulFinanceFactPayload(payload)) return false;
+  const rawText = String(text || "");
+  if (!rawText.trim()) return false;
+  return [
+    /返回不了(?:具体)?金额/,
+    /没有识别到(?:对应的)?(?:合同|项目|客户|供应商|主体)/,
+    /未识别到(?:对应的)?(?:合同|项目|客户|供应商|主体)/,
+    /无法(?:直接)?(?:查询|回答|返回)/,
+    /不能(?:直接)?回答/,
+    /系统(?:暂时|目前)?不支持/,
+    /需要(?:先)?(?:导入|同步).*?(?:余额表|收入表|成本表|序时账|流水|数据)/,
+    /(?:期间|当前|该月|这个月|6月|六月).{0,16}没有匹配(?:到)?(?:记录|数据)/,
+    /(?:数据|系统).{0,12}(?:目前|当前)?还没有/,
+    /查不到.{0,16}(?:记录|数据|金额|结果)/
+  ].some((pattern) => pattern.test(rawText));
+}
+
+function financePeriodTextVariants(period) {
+  const raw = String(period || "").trim();
+  if (!raw) return [];
+  const variants = new Set([raw]);
+  let match = raw.match(/^(20\d{2})-(\d{2})$/);
+  if (match) {
+    variants.add(`${match[1]}年${Number(match[2])}月`);
+    return [...variants];
+  }
+  match = raw.match(/^(20\d{2})-(\d{2})~(20\d{2})-(\d{2})$/);
+  if (match) {
+    variants.add(`${match[1]}年${Number(match[2])}月~${match[3]}年${Number(match[4])}月`);
+    variants.add(`${match[1]}年${Number(match[2])}月至${match[3]}年${Number(match[4])}月`);
+  }
+  return [...variants];
+}
+
+function financeMonthKeysFromText(text) {
+  const keys = new Set();
+  for (const match of String(text || "").matchAll(/(20\d{2})-(\d{1,2})/g)) {
+    keys.add(`${match[1]}-${String(Number(match[2])).padStart(2, "0")}`);
+  }
+  for (const match of String(text || "").matchAll(/(20\d{2})年\s*(\d{1,2})月/g)) {
+    keys.add(`${match[1]}-${String(Number(match[2])).padStart(2, "0")}`);
+  }
+  return keys;
+}
+
+function hasFinanceFactPeriodConflict(text, payload) {
+  const compact = compactFinancePayload(payload);
+  const expectedPeriod = String(compact?.period || "").trim();
+  if (!expectedPeriod) return false;
+  const rawText = String(text || "")
+    .split("\n")
+    .filter((line) => !/来源|更新时间/.test(line))
+    .join("\n");
+  if (!rawText.trim()) return false;
+  if (financePeriodTextVariants(expectedPeriod).some((variant) => rawText.includes(variant))) return false;
+  const mentioned = financeMonthKeysFromText(rawText);
+  if (!mentioned.size) return false;
+  const expectedMonths = new Set(String(expectedPeriod).split("~"));
+  for (const month of mentioned) {
+    if (!expectedMonths.has(month)) return true;
+  }
+  return false;
+}
+
+function metricNameForConflictScan(metric) {
+  return String(metric || "")
+    .replace(/[（(].*?[）)]/g, "")
+    .replace(/名义/g, "")
+    .trim();
+}
+
+function metricAliasesForConflictScan(metric) {
+  const name = metricNameForConflictScan(metric);
+  const aliases = new Set();
+  if (name) aliases.add(name);
+  if (/差异|差额|相差|账上净利润-银行净流入/.test(name)) {
+    ["差异金额", "名义差额", "差异", "差额", "相差", "差了"].forEach((alias) => aliases.add(alias));
+  }
+  if (name.includes("银行净流入")) {
+    aliases.add("净流入");
+  }
+  if (name.includes("账上净利润")) {
+    aliases.add("账上利润");
+    aliases.add("净利润");
+  }
+  return [...aliases].filter((alias) => alias.length >= 2);
+}
+
+function hasFinanceFactMetricAmountConflict(text, payload) {
+  const compact = compactFinancePayload(payload);
+  const metrics = compact?.metrics && typeof compact.metrics === "object" ? compact.metrics : {};
+  const rawText = String(text || "");
+  if (!rawText.trim()) return false;
+  const moneyPattern = /(-?[0-9][0-9,]*(?:\.\d+)?)(\s*)(万元|万|元)/g;
+  for (const [rawMetric, rawExpected] of Object.entries(metrics)) {
+    const aliases = metricAliasesForConflictScan(rawMetric);
+    if (!aliases.length) continue;
+    const expected = Number(String(rawExpected).replace(/,/g, ""));
+    if (!Number.isFinite(expected)) continue;
+    for (const line of rawText.split("\n")) {
+      if (!aliases.some((alias) => line.includes(alias))) continue;
+      const matches = [...line.matchAll(moneyPattern)];
+      if (!matches.length) continue;
+      const hasExpected = matches.some((match) => sameFinanceAmount(displayedFinanceAmountInYuan(match[1], match[3]), expected));
+      if (!hasExpected) return true;
+    }
+  }
+  return false;
+}
+
+function hasFinanceFactSourceConflict(text, payload) {
+  const compact = compactFinancePayload(payload);
+  if (!compact?.source_note && !compact?.source_documents?.length) return false;
+  return /来源[：:]\s*(?:未记录|无|暂无|没有)/.test(String(text || ""));
+}
+
+function hasFinanceFactConflict(text, atoms, payload) {
+  return hasFinanceFactContradictingDenial(text, payload) ||
+    hasConflictingFinanceFactAtoms(text, atoms) ||
+    hasFinanceFactPeriodConflict(text, payload) ||
+    hasFinanceFactMetricAmountConflict(text, payload) ||
+    hasFinanceFactSourceConflict(text, payload);
+}
+
 function financeDetailLine(row) {
   if (!row || typeof row !== "object") return "";
   const entity = String(row.supplier_name || row.customer_name || row.entity || "").trim();
@@ -1308,7 +1451,7 @@ function appendMissingFinanceFactAtoms(text, atoms, payload) {
     ),
     atoms
   );
-  if (payload && hasConflictingFinanceFactAtoms(current, atoms)) {
+  if (payload && hasFinanceFactConflict(current, atoms, payload)) {
     current = canonicalFinanceAnswerFromPayload(payload) || current;
   }
   const missing = atoms

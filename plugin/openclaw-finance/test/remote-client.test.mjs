@@ -744,6 +744,203 @@ test("finance facts package drives prompt context and answer guard", async () =>
   }, { toolPayload });
 });
 
+test("before_message_write rejects assistant denial that contradicts successful finance facts", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks }) => {
+    const beforeWrite = hooks.get("before_message_write");
+    const sessionKey = "finance-fact-denial-conflict-session";
+    beforeWrite({
+      message: {
+        role: "toolResult",
+        toolName: "finance-query",
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: true,
+            finance_facts: {
+              schema_version: "finance_facts.v1",
+              resolved_period: "2025-10~2026-06",
+              basis: "项目成本口径",
+              headline_metric: "项目应付（应付未付/未付款）",
+              headline_amount: 3624621.66,
+              source_files: ["《优集收入、成本计算表 - 上传.xlsx》"],
+              source_note: "来源：《优集收入、成本计算表 - 上传.xlsx》的【成本-月度结算】",
+              source_update_note: "来源更新时间：2026-07-07 15:02:52",
+              metrics: {
+                "项目应付": 3624621.66,
+                "项目成本": 14872345.68,
+                "已付款": 11247724.02
+              },
+              required_atoms: [
+                "期间：2025-10~2026-06",
+                "口径：项目应付（应付未付/未付款）",
+                "金额：3624621.66 元",
+                "来源：《优集收入、成本计算表 - 上传.xlsx》的【成本-月度结算】",
+                "来源更新时间：2026-07-07 15:02:52"
+              ]
+            },
+            data: {
+              contract_summary: {
+                cost_settlement: 14872345.68,
+                cost_paid: 11247724.02
+              }
+            }
+          })
+        }]
+      }
+    }, { sessionKey });
+
+    const denialAnswer = {
+      role: "assistant",
+      content: [{
+        type: "text",
+        text: [
+          "黄总，2025-10~2026-06 这个期间按项目口径查应付未付，系统目前返回不了具体金额。",
+          "原因是没有识别到对应的合同/项目主体，也不能直接回答。"
+        ].join("\n")
+      }],
+      stopReason: "stop"
+    };
+    const patched = beforeWrite({ message: denialAnswer }, { sessionKey })?.message;
+    const text = patched.content[0].text;
+    assert.match(text, /期间：2025-10~2026-06/);
+    assert.match(text, /口径：项目应付（应付未付\/未付款）/);
+    assert.match(text, /金额：3624621\.66 元/);
+    assert.match(text, /来源：《优集收入、成本计算表 - 上传\.xlsx》的【成本-月度结算】/);
+    assert.match(text, /来源更新时间：2026-07-07 15:02:52/);
+    assert.doesNotMatch(text, /返回不了具体金额|没有识别到对应的合同\/项目主体|不能直接回答/);
+  });
+});
+
+test("before_message_write replaces assistant answer that conflicts with reconciliation finance facts", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks }) => {
+    const beforeWrite = hooks.get("before_message_write");
+    const sessionKey = "finance-reconciliation-fact-conflict-session";
+    beforeWrite({
+      message: {
+        role: "toolResult",
+        toolName: "finance-query",
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: true,
+            finance_facts: {
+              schema_version: "finance_facts.v1",
+              resolved_period: "2026-03",
+              basis: "账上利润与银行流水双口径对账",
+              headline_metric: "账上净利润-银行净流入名义差额",
+              headline_amount: 925150.88,
+              source_files: [
+                "《交易查询，20260101-20260331，共143笔.xlsx》",
+                "《南京优集1-3月序时账.xls》"
+              ],
+              source_note: "来源：《交易查询，20260101-20260331，共143笔.xlsx》；《南京优集1-3月序时账.xls》",
+              source_update_note: "来源更新时间：2026-04-27 13:33:40",
+              metrics: {
+                "银行净流入": -633859.33,
+                "账上净利润": 291291.55,
+                "差异金额": 925150.88,
+                "账上净利润-银行净流入": 925150.88
+              },
+              required_atoms: [
+                "期间：2026-03",
+                "口径：账上利润与银行流水双口径对账",
+                "银行净流入：-633859.33 元",
+                "账上净利润：291291.55 元",
+                "差异金额：925150.88 元",
+                "金额：925150.88 元",
+                "来源：《交易查询，20260101-20260331，共143笔.xlsx》；《南京优集1-3月序时账.xls》",
+                "来源更新时间：2026-04-27 13:33:40"
+              ]
+            }
+          })
+        }]
+      }
+    }, { sessionKey });
+
+    const conflictedAnswer = {
+      role: "assistant",
+      content: [{
+        type: "text",
+        text: [
+          "2026年6月银行流水和账上利润都没有数据。",
+          "银行净流入 0 元，账上净利润 0 元，相差 0 元。",
+          "来源：未记录"
+        ].join("\n")
+      }],
+      stopReason: "stop"
+    };
+
+    const patched = beforeWrite({ message: conflictedAnswer }, { sessionKey })?.message;
+    const text = patched.content[0].text;
+    assert.match(text, /期间：2026-03/);
+    assert.match(text, /口径：账上利润与银行流水双口径对账/);
+    assert.match(text, /银行净流入：-633859\.33 元/);
+    assert.match(text, /账上净利润：291291\.55 元/);
+    assert.match(text, /差异金额：925150\.88 元/);
+    assert.match(text, /来源：《交易查询，20260101-20260331，共143笔\.xlsx》；《南京优集1-3月序时账\.xls》/);
+    assert.match(text, /来源更新时间：2026-04-27 13:33:40/);
+    assert.doesNotMatch(text, /2026年6月|银行净流入 0 元|账上净利润 0 元|相差 0 元|来源：未记录/);
+
+    beforeWrite({
+      message: {
+        role: "toolResult",
+        toolName: "finance-query",
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: true,
+            finance_facts: {
+              schema_version: "finance_facts.v1",
+              resolved_period: "2026-03",
+              basis: "账上利润与银行流水双口径对账",
+              headline_metric: "账上净利润-银行净流入名义差额",
+              headline_amount: 925150.88,
+              source_note: "来源：《交易查询，20260101-20260331，共143笔.xlsx》；《南京优集1-3月序时账.xls》",
+              source_update_note: "来源更新时间：2026-04-27 13:33:40",
+              metrics: {
+                "银行净流入": -633859.33,
+                "账上净利润": 291291.55,
+                "差异金额": 925150.88,
+                "账上净利润-银行净流入": 925150.88
+              },
+              required_atoms: [
+                "期间：2026-03",
+                "口径：账上利润与银行流水双口径对账",
+                "银行净流入：-633859.33 元",
+                "账上净利润：291291.55 元",
+                "差异金额：925150.88 元",
+                "金额：925150.88 元",
+                "来源：《交易查询，20260101-20260331，共143笔.xlsx》；《南京优集1-3月序时账.xls》",
+                "来源更新时间：2026-04-27 13:33:40"
+              ]
+            }
+          })
+        }]
+      }
+    }, { sessionKey });
+
+    const wrongDifferenceOnly = {
+      role: "assistant",
+      content: [{
+        type: "text",
+        text: [
+          "2026-03 银行净流入 -633859.33 元，账上净利润 291291.55 元。",
+          "两者差异 0 元。",
+          "来源：《交易查询，20260101-20260331，共143笔.xlsx》；《南京优集1-3月序时账.xls》",
+          "来源更新时间：2026-04-27 13:33:40"
+        ].join("\n")
+      }],
+      stopReason: "stop"
+    };
+    const diffPatched = beforeWrite({ message: wrongDifferenceOnly }, { sessionKey })?.message;
+    const diffText = diffPatched.content[0].text;
+    assert.match(diffText, /差异金额：925150\.88 元/);
+    assert.doesNotMatch(diffText, /差异 0 元/);
+  });
+});
+
 test("before_message_write appends cash flow amount from structured payload", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks }) => {

@@ -239,7 +239,7 @@ func financeFactNetCashAmount(data map[string]any, metrics map[string]any) (floa
 }
 
 func financeFactRequiredAtoms(facts map[string]any) []string {
-	atoms := []string{}
+	atoms := financeFactStringSlice(facts["required_atoms"])
 	if period := strings.TrimSpace(anyToString(facts["resolved_period"])); period != "" {
 		atoms = append(atoms, "期间："+period)
 	}
