@@ -783,6 +783,7 @@ VALUES ('C-JUN-001','2026-06','contract_fund_income','26年Q2收入明细',300,1
 
 	for _, question := range []string{
 		"按最新可见月份，查看当月营收（项目结算收入）",
+		"最新一个完整月份的项目营收是多少",
 		"最新月份项目结算收入是多少？",
 	} {
 		route := engine.resolveQueryRouting(question)
