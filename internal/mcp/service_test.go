@@ -67,6 +67,24 @@ func TestEffectiveFinanceQueryProtectsReconciliationDifferenceIntent(t *testing.
 	}
 }
 
+func TestEffectiveFinanceQueryProtectsSpecificContractSubject(t *testing.T) {
+	t.Parallel()
+
+	raw := "按合同行业商品数据采购合同-A02来看，从2025年10月到上个完整自然月月底，项目应收未收合计是多少？"
+	rewritten := "采购合同-A02 2025年10月到上个完整自然月月底 项目应收未收合计"
+
+	got := effectiveFinanceQuery(rewritten, raw)
+
+	for _, want := range []string{"行业商品数据采购合同-A02", "上个完整自然月", "项目应收未收"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("effectiveFinanceQuery should preserve %q, got %q", want, got)
+		}
+	}
+	if !strings.Contains(got, "补充识别") || !strings.Contains(got, "采购合同-A02") {
+		t.Fatalf("effectiveFinanceQuery should keep rewritten hints as supplemental context, got %q", got)
+	}
+}
+
 func TestEffectiveFinanceQueryExtractsWrappedOriginalQuestion(t *testing.T) {
 	t.Parallel()
 

@@ -40,6 +40,7 @@ var (
 	absoluteFinanceMonthDashPattern    = regexp.MustCompile(`20\d{2}\s*[-/.]\s*(0?[1-9]|1[0-2])`)
 	absoluteFinanceMonthChineseKey     = regexp.MustCompile(`(20\d{2})\s*年\s*(0?[1-9]|1[0-2])\s*月`)
 	absoluteFinanceMonthDashKey        = regexp.MustCompile(`(20\d{2})\s*[-/.]\s*(0?[1-9]|1[0-2])`)
+	specificFinanceSubjectPattern      = regexp.MustCompile(`[\p{Han}A-Za-z0-9_（）()·\-－]{2,}(?:合同|协议|项目)[\-－]?[A-Za-z0-9]+`)
 )
 
 // ServiceConfig contains the business configuration shared by MCP transports.
@@ -159,6 +160,7 @@ func looksLikeFinanceQueryText(text string) bool {
 
 func shouldPreferRawFinanceSemantics(rawUser, rewritten string) bool {
 	return missingProtectedFinanceTerms(rawUser, rewritten) ||
+		lostSpecificFinanceSubject(rawUser, rewritten) ||
 		lostRelativeFinancePeriod(rawUser, rewritten) ||
 		lostAbsoluteFinanceMonth(rawUser, rewritten)
 }
@@ -191,6 +193,57 @@ func lostAbsoluteFinanceMonth(rawUser, rewritten string) bool {
 		}
 	}
 	return false
+}
+
+func lostSpecificFinanceSubject(rawUser, rewritten string) bool {
+	rewrittenKey := normalizeFinanceSubjectText(rewritten)
+	if rewrittenKey == "" {
+		return false
+	}
+	for _, subject := range specificFinanceSubjectCandidates(rawUser) {
+		if !strings.Contains(rewrittenKey, normalizeFinanceSubjectText(subject)) {
+			return true
+		}
+	}
+	return false
+}
+
+func specificFinanceSubjectCandidates(text string) []string {
+	matches := specificFinanceSubjectPattern.FindAllString(strings.TrimSpace(text), -1)
+	out := make([]string, 0, len(matches))
+	seen := map[string]bool{}
+	for _, match := range matches {
+		subject := trimSpecificFinanceSubject(match)
+		key := normalizeFinanceSubjectText(subject)
+		if key == "" || seen[key] || len([]rune(subject)) < 4 {
+			continue
+		}
+		seen[key] = true
+		out = append(out, subject)
+	}
+	return out
+}
+
+func trimSpecificFinanceSubject(subject string) string {
+	trimmed := strings.Trim(strings.TrimSpace(subject), "，,。；;：:的从按看")
+	for {
+		next := strings.TrimSpace(trimmed)
+		for _, prefix := range []string{"按合同", "按项目", "按协议", "合同", "项目", "协议"} {
+			if strings.HasPrefix(next, prefix) && strings.Count(next, strings.TrimPrefix(prefix, "按")) > 1 {
+				next = strings.TrimSpace(strings.TrimPrefix(next, prefix))
+			}
+		}
+		next = strings.Trim(next, "，,。；;：:的从按看")
+		if next == trimmed {
+			return next
+		}
+		trimmed = next
+	}
+}
+
+func normalizeFinanceSubjectText(text string) string {
+	replacer := strings.NewReplacer(" ", "", "\t", "", "\n", "", "（", "(", "）", ")", "－", "-", "，", "", ",", "", "。", "", "；", "", ";", "", "：", "", ":", "")
+	return strings.ToLower(replacer.Replace(strings.TrimSpace(text)))
 }
 
 func mergeProtectedFinanceQuery(rawUser, rewritten string) string {
