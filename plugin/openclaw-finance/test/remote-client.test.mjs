@@ -166,6 +166,27 @@ test("finance-query execute preserves raw user finance question for protected te
   });
 });
 
+test("finance-query execute preserves reconciliation difference intent from raw user question", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const rawUserQuestion = "上个完整自然月银行净流入和账上净利润差多少？";
+    await hooks.get("before_prompt_build")({
+      prompt: rawUserQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: rawUserQuestion }] }]
+    }, { sessionKey: "finance-reconciliation-difference-intent" });
+
+    await tools.get("finance-query").execute("call-rewritten-query-without-difference", {
+      query: "上个完整自然月银行净流入和账上净利润"
+    }, { sessionKey: "finance-reconciliation-difference-intent" });
+
+    const args = toolCalls.at(-1).arguments;
+    assert.equal(args.raw_user_query, rawUserQuestion);
+    assert.match(args.query, /差多少/);
+    assert.match(args.query, /银行净流入/);
+    assert.match(args.query, /账上净利润/);
+  });
+});
+
 test("finance-query execute keeps rewritten entity hints while protecting dynamic period", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {

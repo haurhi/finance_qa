@@ -196,7 +196,14 @@ const FINANCE_QUERY_PROTECTION_TERMS = [
   "实际到账",
   "实际支出",
   "应收账款",
-  "应付账款"
+  "应付账款",
+  "差多少",
+  "差异金额",
+  "名义差额",
+  "差异",
+  "差额",
+  "相差",
+  "差了"
 ];
 
 // MCP Client for communicating with financeqa serve

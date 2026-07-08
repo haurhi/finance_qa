@@ -233,6 +233,9 @@ func shouldForceCompanyScopeContractAggregateWithConfig(question string, cfg Rul
 	if q == "" || shouldUseExplicitFinancialAccountQuestion(q) {
 		return false
 	}
+	if containsAny(q, []string{"所有", "全部", "全量"}) && looksLikeProjectPayableUnpaidQuestion(q) {
+		return true
+	}
 	if !containsAny(q, []string{
 		"所有项目", "全部项目", "全量项目",
 		"所有合同", "全部合同", "全量合同",

@@ -25,6 +25,7 @@ var protectedFinanceTerms = []string{
 	"银行流水", "银行卡", "银行账户", "官方余额表",
 	"财务口径", "项目口径", "合同口径", "项目成本口径",
 	"实际到账", "实际支出", "应收账款", "应付账款",
+	"差多少", "差异金额", "名义差额", "差异", "差额", "相差", "差了",
 }
 
 var relativeFinancePeriodTerms = []string{

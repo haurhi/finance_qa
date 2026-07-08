@@ -52,6 +52,21 @@ func TestEffectiveFinanceQueryProtectsDynamicPeriodAndKeepsEntityHints(t *testin
 	}
 }
 
+func TestEffectiveFinanceQueryProtectsReconciliationDifferenceIntent(t *testing.T) {
+	t.Parallel()
+
+	raw := "上个完整自然月银行净流入和账上净利润差多少？"
+	rewritten := "上个完整自然月银行净流入和账上净利润"
+
+	got := effectiveFinanceQuery(rewritten, raw)
+
+	for _, want := range []string{"上个完整自然月", "银行净流入", "账上净利润", "差多少"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("effectiveFinanceQuery should preserve %q, got %q", want, got)
+		}
+	}
+}
+
 func TestEffectiveFinanceQueryExtractsWrappedOriginalQuestion(t *testing.T) {
 	t.Parallel()
 

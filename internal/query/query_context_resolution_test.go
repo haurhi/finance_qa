@@ -767,6 +767,20 @@ VALUES ('C-JUN-001','2026-06','contract_fund_income','26年Q2收入明细',300,1
 		t.Fatalf("explicit revenue-table project settlement should not answer account/cash reconciliation, got: %s", res.Message)
 	}
 
+	res = engine.Query("收入表中最新完整月份的营收是多少？")
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["period"]; got != "2026-06" {
+		t.Fatalf("period = %v, want 2026-06 for latest complete month revenue-table revenue; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := res.Data["total"]; got != float64(300) {
+		t.Fatalf("total = %v, want latest single-month project settlement revenue 300; data=%+v", got, res.Data)
+	}
+	if strings.Contains(res.Message, "2026-04~2026-06") || strings.Contains(res.Message, "Q2") || strings.Contains(res.Message, "银行卡") || strings.Contains(res.Message, "营业收入") {
+		t.Fatalf("latest complete month revenue-table query should not answer quarter/account/cash view, got: %s", res.Message)
+	}
+
 	for _, question := range []string{
 		"按最新可见月份，查看当月营收（项目结算收入）",
 		"最新月份项目结算收入是多少？",

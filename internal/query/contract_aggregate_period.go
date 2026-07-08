@@ -379,7 +379,12 @@ func contractAggregateFallbackPeriodFrom(question, latest string) string {
 	if strings.TrimSpace(latest) == "" {
 		return ""
 	}
-	if containsAny(question, []string{"本月", "这个月", "当月", "上个月", "上月", "上一个完整自然月", "最新月份", "最新的月份", "最新可见月份", "最近完整月份", "最近月份"}) {
+	if containsAny(question, []string{
+		"本月", "这个月", "当月",
+		"上个月", "上月", "上一个完整自然月", "上个完整自然月", "上一个完整月份", "上个完整月份", "上一个完整月", "上个完整月",
+		"最新月份", "最新的月份", "最新完整月份", "最新完整月", "最新可见月份",
+		"最近完整月份", "最近完整月", "最近月份",
+	}) {
 		return latest
 	}
 	year, month := parsePeriod(latest)

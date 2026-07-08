@@ -84,8 +84,8 @@ func TestInitializeReportsCurrentMCPServerVersion(t *testing.T) {
 	response := responseByID(t, stdout.String(), float64(1))
 	result := response["result"].(map[string]any)
 	serverInfo := result["serverInfo"].(map[string]any)
-	if got := serverInfo["version"]; got != "2.2.49" {
-		t.Fatalf("MCP server version = %v, want 2.2.49", got)
+	if got := serverInfo["version"]; got != "2.2.50" {
+		t.Fatalf("MCP server version = %v, want 2.2.50", got)
 	}
 }
 

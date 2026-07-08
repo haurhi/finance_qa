@@ -1456,6 +1456,41 @@ func TestUnpaidProjectRosterExplicitYearRangeEachUsesActualProjectDataStart(t *t
 	}
 }
 
+func TestUnpaidProjectRosterAllUnpaidProjectsDoesNotExtractSyntheticEntity(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	seedUnpaidProjectRosterBusinessCutoffFixture(t, dbPath)
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.Query("2025年到2026年所有未付款的项目和对应金额明细")
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["period"]; got != "2025-10~2026-06" {
+		t.Fatalf("period = %v, want actual project data range 2025-10~2026-06; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := res.Data["total"]; got != float64(500) {
+		t.Fatalf("total = %v, want project payable 500; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	spec, ok := res.Data["query_spec"].(map[string]any)
+	if !ok {
+		t.Fatalf("query_spec missing: %+v", res.Data)
+	}
+	if got := spec["entity"]; got != "" {
+		t.Fatalf("query_spec.entity = %v, want empty company-scope aggregate; spec=%+v", got, spec)
+	}
+	if got := spec["needs_contract_dimension"]; got != false {
+		t.Fatalf("needs_contract_dimension = %v, want false; spec=%+v", got, spec)
+	}
+	if strings.Contains(res.Message, "没有识别到合同/项目主体") {
+		t.Fatalf("all unpaid projects should not require a specific contract subject, got %q", res.Message)
+	}
+}
+
 func TestUnpaidProjectRosterUsesLatestDataMonthAsBusinessCutoffWithoutAsOf(t *testing.T) {
 	dbPath := buildContractARAPPriorityDB(t)
 	seedUnpaidProjectRosterBusinessCutoffFixture(t, dbPath)
