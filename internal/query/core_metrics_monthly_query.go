@@ -17,10 +17,16 @@ func (e *Engine) queryMonthlySummary(question, from, to string) Result {
 	if err != nil {
 		return Result{Success: false, Message: err.Error()}
 	}
-	is, _ := e.calc.ComputeIncomeStatement(e.Company, year, month)
-	cash, _ := e.calc.ComputeCashFlow(e.Company, from, to)
+	is, incomeErr := e.calc.ComputeIncomeStatement(e.Company, year, month)
+	cash, cashErr := e.calc.ComputeCashFlow(e.Company, from, to)
 	logs := append([]string{}, e.calc.CalculationLogs...)
 	sqls := append([]string{}, e.calc.ExecutedSQLs...)
+	if incomeErr != nil || is == nil {
+		logs = append(logs, fmt.Sprintf("[月度口径] cumulative income statement unavailable: %v", incomeErr))
+	}
+	if cashErr != nil || cash == nil {
+		logs = append(logs, fmt.Sprintf("[月度口径] bank cashflow unavailable: %v", cashErr))
+	}
 	var bridgeMap map[string]any
 	if bridge, bridgeErr := analysis.AnalyzeProfitCashBridgeWithDB(context.Background(), e.db, e.Company, to); bridgeErr == nil {
 		bridgeMap = bridgeToMap(&bridge)
@@ -34,12 +40,17 @@ func (e *Engine) queryMonthlySummary(question, from, to string) Result {
 
 	revenue := book.Revenue
 	expense := book.TotalCost
-	mainMsg := fmt.Sprintf("%s 月度经营分析：账上收入 %.2f 元，成本及费用 %.2f 元，利润 %.2f 元；同时银行卡收款 %.2f 元、付款 %.2f 元。", to, revenue, expense, book.Profit, cash.Income, cash.Expense)
+	mainMsg := fmt.Sprintf("%s 月度经营分析：账上收入 %.2f 元，成本及费用 %.2f 元，利润 %.2f 元。", to, revenue, expense, book.Profit)
+	if cash != nil {
+		mainMsg = fmt.Sprintf("%s 月度经营分析：账上收入 %.2f 元，成本及费用 %.2f 元，利润 %.2f 元；同时银行卡收款 %.2f 元、付款 %.2f 元。", to, revenue, expense, book.Profit, cash.Income, cash.Expense)
+	}
 	if revenue == 0 && expense == 0 && book.Profit == 0 {
 		logs = append(logs, fmt.Sprintf("[智能回溯] %s 当月无经营记账，正在为您还原年度累计经营体量...", to))
-		if month > 1 {
+		if month > 1 && is != nil {
 			mainMsg = fmt.Sprintf("%s 暂无经营数据。%d年1月以来（YTD）累计：收入 %.2f, 支出 %.2f, 累计利润 %.2f", to, year, is.Revenue, is.Cost, is.NetProfit)
 			logs = append(logs, fmt.Sprintf("[审计结论] 虽当月静默，但年度累计体量已达 %.2f 万元", is.Revenue/10000.0))
+		} else if month > 1 {
+			mainMsg = fmt.Sprintf("%s 暂无经营数据，年度累计数据暂不可用", to)
 		} else {
 			mainMsg = fmt.Sprintf("%s 暂无经营数据，且为年度首月，无历史数据可回溯", to)
 		}
@@ -58,10 +69,13 @@ func (e *Engine) queryMonthlySummary(question, from, to string) Result {
 
 func buildMonthlyCoreMetricResultData(year, month int, bookSource string, book monthlyBookView, cumulative *accounting.IncomeStatementResult, cash *accounting.CashPerspective, bridgeMap map[string]any) map[string]any {
 	cashFlowSummary := buildCoreMetricCashFlowSummary(cash)
-	data := buildCoreMetricSharedResultFields(bookSource, book, book.Profit, cashFlowSummary, bridgeMap, true)
+	includeCash := cash != nil
+	data := buildCoreMetricSharedResultFields(bookSource, book, book.Profit, cashFlowSummary, bridgeMap, includeCash)
 	data["monthly"] = buildCoreMetricMonthlyPayload(year, month, bookSource, book)
 	data["cumulative"] = cumulative
-	data["cash_flow"] = cash
+	if includeCash {
+		data["cash_flow"] = cash
+	}
 	return data
 }
 

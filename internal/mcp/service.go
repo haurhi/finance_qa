@@ -161,6 +161,7 @@ func looksLikeFinanceQueryText(text string) bool {
 func shouldPreferRawFinanceSemantics(rawUser, rewritten string) bool {
 	return missingProtectedFinanceTerms(rawUser, rewritten) ||
 		lostSpecificFinanceSubject(rawUser, rewritten) ||
+		addedAbsoluteFinanceMonthToRelativePeriod(rawUser, rewritten) ||
 		lostRelativeFinancePeriod(rawUser, rewritten) ||
 		lostAbsoluteFinanceMonth(rawUser, rewritten)
 }
@@ -189,6 +190,19 @@ func lostAbsoluteFinanceMonth(rawUser, rewritten string) bool {
 	rewrittenMonths := absoluteFinanceMonthKeys(rewritten)
 	for month := range rawMonths {
 		if !rewrittenMonths[month] {
+			return true
+		}
+	}
+	return false
+}
+
+func addedAbsoluteFinanceMonthToRelativePeriod(rawUser, rewritten string) bool {
+	if !containsAnyText(rawUser, relativeFinancePeriodTerms) {
+		return false
+	}
+	rawMonths := absoluteFinanceMonthKeys(rawUser)
+	for month := range absoluteFinanceMonthKeys(rewritten) {
+		if !rawMonths[month] {
 			return true
 		}
 	}

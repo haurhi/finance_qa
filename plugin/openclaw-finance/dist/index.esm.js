@@ -1362,10 +1362,65 @@ function hasFinanceFactMetricAmountConflict(text, payload) {
   return false;
 }
 
+const FINANCE_BASIS_CONFLICT_GROUPS = {
+  project: ["项目口径", "项目经营口径", "项目成本口径", "项目结算", "项目营收", "项目收入", "项目应收", "项目应付", "合同口径"],
+  journal: ["序时账", "账上", "会计账", "财务账", "账上净利润", "账上利润"],
+  bank: ["银行流水", "银行卡", "银行净流入", "净现金流", "现金流", "现金口径"],
+  balance: ["官方余额表", "余额表", "科目余额", "资产负债表", "应收账款", "应付账款", "其他应付款"]
+};
+
+function financeBasisGroupsFromText(...values) {
+  const text = values.map((value) => String(value || "")).join("\n");
+  const groups = new Set();
+  for (const [group, aliases] of Object.entries(FINANCE_BASIS_CONFLICT_GROUPS)) {
+    if (aliases.some((alias) => text.includes(alias))) groups.add(group);
+  }
+  if (/fin_(?:fund_income|cost_settlements|contracts)|contract_/i.test(text)) groups.add("project");
+  if (/fin_journal|journal/i.test(text)) groups.add("journal");
+  if (/bank_statement|fin_bank|bank/i.test(text)) groups.add("bank");
+  if (/balance|fin_balance|arap/i.test(text)) groups.add("balance");
+  return groups;
+}
+
+function hasFinanceFactBasisConflict(text, payload) {
+  const compact = compactFinancePayload(payload);
+  if (!compact || typeof compact !== "object") return false;
+  const expectedGroups = financeBasisGroupsFromText(
+    compact.business_basis,
+    compact.metric_label,
+    compact.metric,
+    ...(Array.isArray(compact.source_tables) ? compact.source_tables : [])
+  );
+  if (!expectedGroups.size) return false;
+  const answerGroups = financeBasisGroupsFromText(text);
+  if (!answerGroups.size) return false;
+  for (const group of answerGroups) {
+    if (!expectedGroups.has(group)) return true;
+  }
+  return false;
+}
+
+function sourceFileNamesFromText(text) {
+  const names = [];
+  for (const match of String(text || "").matchAll(/《([^》]+?\.(?:xlsx|xls|csv))[^》]*》/gi)) {
+    const name = String(match[1] || "").trim();
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
 function hasFinanceFactSourceConflict(text, payload) {
   const compact = compactFinancePayload(payload);
   if (!compact?.source_note && !compact?.source_documents?.length) return false;
-  return /来源[：:]\s*(?:未记录|无|暂无|没有)/.test(String(text || ""));
+  const rawText = String(text || "");
+  if (/来源[：:]\s*(?:未记录|无|暂无|没有)/.test(rawText)) return true;
+  const expectedSources = sourceFileNamesFromText([
+    compact.source_note,
+    ...(Array.isArray(compact.source_documents) ? compact.source_documents : [])
+  ].join("\n"));
+  const actualSources = sourceFileNamesFromText(rawText);
+  if (!expectedSources.length || !actualSources.length) return false;
+  return !actualSources.some((source) => expectedSources.includes(source));
 }
 
 function hasFinanceFactConflict(text, atoms, payload) {
@@ -1373,6 +1428,7 @@ function hasFinanceFactConflict(text, atoms, payload) {
     hasConflictingFinanceFactAtoms(text, atoms) ||
     hasFinanceFactPeriodConflict(text, payload) ||
     hasFinanceFactMetricAmountConflict(text, payload) ||
+    hasFinanceFactBasisConflict(text, payload) ||
     hasFinanceFactSourceConflict(text, payload);
 }
 
@@ -1596,6 +1652,13 @@ function patchAssistantMessageWithFinanceFactAtoms(message, atoms, payload) {
   return { ...message, content: nextContent };
 }
 
+function hasAssistantMessageText(message) {
+  if (!message || message.role !== "assistant" || hasAssistantToolCalls(message)) return false;
+  if (typeof message.content === "string") return Boolean(message.content.trim());
+  if (!Array.isArray(message.content)) return false;
+  return message.content.some((item) => item?.type === "text" && typeof item.text === "string" && item.text.trim());
+}
+
 function patchFinanceTextValue(value, atoms, payload) {
   if (typeof value !== "string" || !value.trim()) return { text: value, changed: false };
   const nextText = appendMissingFinanceFactAtoms(value, atoms, payload);
@@ -1628,10 +1691,30 @@ function patchLastTextObject(items, atoms, payload) {
   return false;
 }
 
+function hasPatchableFinanceTextTarget(target) {
+  if (Array.isArray(target)) return target.some((value) => typeof value === "string" && value.trim());
+  if (!target || typeof target !== "object") return false;
+  if (hasAssistantMessageText(target.message)) return true;
+  if (Array.isArray(target.assistantTexts) && target.assistantTexts.some((value) => typeof value === "string" && value.trim())) return true;
+  if (Array.isArray(target.payloads) && target.payloads.some((item) => item && typeof item === "object" && typeof item.text === "string" && item.text.trim())) return true;
+  if (Array.isArray(target.content) && target.content.some((item) => item && typeof item === "object" && typeof item.text === "string" && item.text.trim())) return true;
+  if (target.result && typeof target.result === "object" && hasPatchableFinanceTextTarget(target.result)) return true;
+  if (typeof target.text === "string" && target.text.trim()) return true;
+  if (typeof target.content === "string" && target.content.trim()) return true;
+  return false;
+}
+
 function patchAssistantTextsWithFinanceFactAtoms(target, atoms, payload) {
   if (!Array.isArray(atoms) || !atoms.length) return false;
   if (Array.isArray(target)) return patchLastStringArrayItem(target, atoms, payload);
   if (!target || typeof target !== "object") return false;
+  if (target.message && typeof target.message === "object") {
+    const patched = patchAssistantMessageWithFinanceFactAtoms(target.message, atoms, payload);
+    if (patched && patched !== target.message) {
+      target.message = patched;
+      return true;
+    }
+  }
   if (Array.isArray(target.assistantTexts) && patchLastStringArrayItem(target.assistantTexts, atoms, payload)) return true;
   if (Array.isArray(target.payloads) && patchLastTextObject(target.payloads, atoms, payload)) return true;
   if (Array.isArray(target.content) && patchLastTextObject(target.content, atoms, payload)) return true;
@@ -1880,7 +1963,9 @@ const plugin = {
       const atoms = bundle?.atoms;
       const payload = bundle?.payload;
       if (!atoms?.length) return undefined;
-      patchAssistantTextsWithFinanceFactAtoms(event, atoms, payload);
+      const hasPatchableText = hasPatchableFinanceTextTarget(event);
+      const patched = patchAssistantTextsWithFinanceFactAtoms(event, atoms, payload);
+      if (!patched && !hasPatchableText) return undefined;
       pendingFinanceFactAtomsBySession.delete(bundle.key);
       pendingFinanceFactPayloadsBySession.delete(bundle.key);
       unregisterFinanceRunForSession(bundle.scope);

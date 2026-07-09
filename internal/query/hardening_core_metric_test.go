@@ -51,6 +51,54 @@ func TestMonthlySummaryYTDFallbackUsesRequestedYear(t *testing.T) {
 	}
 }
 
+func TestMonthlySummaryHandlesUnavailableCashFlowWithoutPanic(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "hardening-monthly-no-cash.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	stmts := []string{
+		`CREATE TABLE income_statement (company TEXT, period TEXT, item_name TEXT, current_amount REAL, cumulative_amount REAL)`,
+		`CREATE TABLE journal (company TEXT, period TEXT, voucher_date TEXT, voucher_no TEXT, account_code TEXT, account_name TEXT, summary TEXT, direction TEXT, amount REAL, debit_amount REAL, credit_amount REAL, counterparty TEXT)`,
+		`CREATE TABLE balance_sheet (company TEXT, period TEXT, account_code TEXT, account_name TEXT, opening_balance REAL, closing_balance REAL)`,
+		`CREATE TABLE balance_detail (company TEXT, year INTEGER, period TEXT, account_code TEXT, account_name TEXT, opening_debit REAL, opening_credit REAL, current_debit REAL, current_credit REAL, closing_debit REAL, closing_credit REAL)`,
+		`INSERT INTO income_statement(company, period, item_name, current_amount, cumulative_amount) VALUES
+		 ('测试公司','2026-03','营业收入',1000,1000),
+		 ('测试公司','2026-03','营业成本',700,700),
+		 ('测试公司','2026-03','净利润',300,300)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec stmt failed: %v", err)
+		}
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司")
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+	if _, err := db.Exec(`DROP TABLE bank_statement`); err != nil {
+		t.Fatalf("drop bank_statement to simulate unavailable cashflow source: %v", err)
+	}
+
+	res := engine.queryMonthlySummary("2026年3月收入多少？", "2026-03", "2026-03")
+	if !res.Success {
+		t.Fatalf("query should still answer available book metrics: message=%s data=%+v", res.Message, res.Data)
+	}
+	if !strings.Contains(res.Message, "2026-03 月度经营分析") || !strings.Contains(res.Message, "账上收入 1000.00 元") {
+		t.Fatalf("message should keep the book answer, got: %s", res.Message)
+	}
+	if strings.Contains(res.Message, "银行卡收款") {
+		t.Fatalf("message should not fabricate bank cashflow when cash data is unavailable, got: %s", res.Message)
+	}
+	if _, ok := res.Data["cash_flow"]; ok {
+		t.Fatalf("cash_flow should be absent when cashflow query failed, got data=%+v", res.Data)
+	}
+}
+
 func TestFallbackHintUsesGenericPlaceholders(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "hardening-hint.sqlite")
 	db, err := sql.Open("sqlite", dbPath)

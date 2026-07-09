@@ -203,6 +203,21 @@ func shouldUseExplicitFinancialAccountQuestion(q string) bool {
 	return containsAny(q, []string{
 		"序时账", "序时帐", "凭证", "利润表", "财务账", "会计账", "报表口径", "账上",
 		"科目余额", "发生额及余额", "余额表", "资产负债表",
+	}) || looksLikeBalanceSheetARAPQuestion(q)
+}
+
+// looksLikeBalanceSheetARAPQuestion detects company-level balance sheet AR/AP questions
+// like "从账上看，上个完整自然月的应收账款、应付账款和其他应付款分别有多少？".
+// It requires both a balance-sheet account term AND a balance-sheet context keyword so
+// that counterparty-specific questions like "XXX公司应付账款多少" still go through contract
+// dimension with financial fallback.
+func looksLikeBalanceSheetARAPQuestion(q string) bool {
+	if !containsAny(q, []string{"应收账款", "应付账款", "其他应付款", "应收票据", "应付票据", "预付账款", "其他应收款"}) {
+		return false
+	}
+	return containsAny(q, []string{
+		"从账上看", "账上看", "官方余额表", "余额表", "科目余额", "资产负债表", "报表口径",
+		"期末余额", "期初余额", "发生额及余额",
 	})
 }
 
@@ -232,6 +247,15 @@ func looksLikeBossRewriteNonEntity(entity string) bool {
 		return false
 	}
 	if looksLikeBusinessDimensionLabel(entity) {
+		return true
+	}
+	if looksLikePeriodStateFragment(normalized) {
+		return true
+	}
+	if looksLikeStateQuestionResidual(normalized) {
+		return true
+	}
+	if looksLikeDistributionQuestionFragment(normalized) {
 		return true
 	}
 	if looksLikeProjectAggregateSyntheticEntity(entity) {

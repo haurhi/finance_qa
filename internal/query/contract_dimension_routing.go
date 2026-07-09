@@ -88,6 +88,7 @@ func looksLikeCompanyScopeProjectAggregateQuestion(q string) bool {
 		"项目口径", "项目成本口径", "按项目口径", "按项目成本口径", "从项目口径",
 		"项目应收", "项目应付", "项目结算", "项目营收", "项目收入",
 		"未付款的项目", "没有付款的项目", "未支付的项目", "没付款的项目",
+		"已开票未回款", "已开票未收款", "已开票但未回款", "已开票但还没回款",
 		"项目及对应金额", "项目和金额", "项目金额",
 		"哪些项目", "有哪些项目", "每个项目", "项目分别", "项目清单", "项目列表",
 	}) {
@@ -98,6 +99,9 @@ func looksLikeCompanyScopeProjectAggregateQuestion(q string) bool {
 			"合计", "总计", "一共", "多少", "有哪些", "哪些", "列一下", "分别",
 			"对应金额", "金额各", "金额是多少",
 		})
+	}
+	if looksLikeProjectInvoiceOpenQuestion(q) {
+		return true
 	}
 	return false
 }

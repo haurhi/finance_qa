@@ -91,6 +91,15 @@ func looksLikeSyntheticQuestionFragment(entity string) bool {
 	if normalized == "" {
 		return false
 	}
+	if looksLikePeriodStateFragment(normalized) {
+		return true
+	}
+	if looksLikeStateQuestionResidual(normalized) {
+		return true
+	}
+	if looksLikeDistributionQuestionFragment(normalized) {
+		return true
+	}
 	questionFragments := []string{
 		"有哪些", "哪些", "哪个", "哪几个", "哪几家", "帮我查", "查一下",
 		"查看", "看一下", "看下",
@@ -108,4 +117,34 @@ func looksLikeSyntheticQuestionFragment(entity string) bool {
 		}
 	}
 	return matchCount >= 1
+}
+
+func looksLikePeriodStateFragment(normalized string) bool {
+	normalized = normalizeEntityText(normalized)
+	return strings.HasPrefix(normalized, "期间") &&
+		containsAny(normalized, []string{"未", "已", "应收", "应付", "付款", "回款", "收款", "开票", "收票"})
+}
+
+func looksLikeStateQuestionResidual(normalized string) bool {
+	normalized = normalizeEntityText(normalized)
+	if normalized == "" || !containsAny(normalized, []string{"未", "已", "应收", "应付", "付款", "回款", "收款", "开票", "收票", "发票", "支付"}) {
+		return false
+	}
+	stripped := normalized
+	for _, token := range []string{
+		"的", "期间", "项目", "合同", "款项", "金额",
+		"未", "已", "应收", "应付", "付款", "回款", "收款", "开票", "收票", "发票", "支付",
+	} {
+		stripped = strings.ReplaceAll(stripped, token, "")
+	}
+	return stripped == ""
+}
+
+func looksLikeDistributionQuestionFragment(normalized string) bool {
+	normalized = normalizeEntityText(normalized)
+	return containsAny(normalized, []string{
+		"各是", "各多少", "各是多少",
+		"金额各是", "金额各多少", "金额各是多少",
+		"分别是", "分别多少", "分别是多少",
+	})
 }

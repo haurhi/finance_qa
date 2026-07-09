@@ -153,6 +153,16 @@ func looksLikeProjectPayableUnpaidQuestion(q string) bool {
 	return containsAny(q, []string{"项目成本", "成本口径", "项目口径", "项目", "合同", "供应商", "采购", "应付", "成本"})
 }
 
+func looksLikeProjectInvoiceOpenQuestion(q string) bool {
+	if !containsAny(q, []string{"已开票", "已开发票", "开了票", "开票", "已出票"}) {
+		return false
+	}
+	if !containsAny(q, []string{"未回款", "未收款", "未收", "没收", "还没回", "但还没回", "但未回", "没回款", "没收回", "未回来"}) {
+		return false
+	}
+	return containsAny(q, []string{"项目", "合同", "金额", "多少", "合计", "总计", "一共"})
+}
+
 func detectCoreMetric(q string) string {
 	return detectCoreMetricWithConfig(q, getRuleConfig())
 }

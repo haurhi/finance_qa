@@ -170,6 +170,35 @@ func TestBuildQuerySpecRejectsLooseYearRangeAsSyntheticEntity(t *testing.T) {
 	}
 }
 
+func TestBuildQuerySpecRejectsPeriodUnpaidFragmentAsEntity(t *testing.T) {
+	anchor := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)
+
+	spec := BuildQuerySpec("按项目成本口径，2025年到2026年期间未付款的项目各是多少", anchor)
+
+	if spec.Entity != "" {
+		t.Fatalf("Entity = %q, want empty company-scope entity", spec.Entity)
+	}
+	if spec.NeedsContractDimension {
+		t.Fatalf("NeedsContractDimension = true, want company-scope aggregate")
+	}
+	if spec.PeriodFrom != "2025-01" || spec.PeriodTo != "2026-06" {
+		t.Fatalf("period = %s~%s, want 2025-01~2026-06", spec.PeriodFrom, spec.PeriodTo)
+	}
+}
+
+func TestRewriteBossQueryRejectsPeriodUnpaidFragmentAsEntity(t *testing.T) {
+	anchor := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)
+
+	rewrite := RewriteBossQuery("按项目成本口径，2025年到2026年期间未付款的项目各是多少", anchor)
+
+	if rewrite.Entity != "" {
+		t.Fatalf("RewriteBossQuery.Entity = %q, want empty company-scope entity", rewrite.Entity)
+	}
+	if rewrite.Scope != BossScopeCompany {
+		t.Fatalf("RewriteBossQuery.Scope = %s, want %s", rewrite.Scope, BossScopeCompany)
+	}
+}
+
 func TestBuildQuerySpecCarriesBossRewrite(t *testing.T) {
 	anchor := time.Date(2026, time.April, 25, 0, 0, 0, 0, time.UTC)
 

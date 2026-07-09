@@ -67,6 +67,26 @@ func TestEffectiveFinanceQueryProtectsReconciliationDifferenceIntent(t *testing.
 	}
 }
 
+func TestEffectiveFinanceQueryDropsInjectedAbsoluteMonthInsideRelativePeriod(t *testing.T) {
+	t.Parallel()
+
+	raw := "老板，上个完整自然月，银行净流入和账上净利润的差异是多少？"
+	rewritten := "上个完整自然月（2026年6月）银行净流入和账上净利润的差异"
+
+	got := effectiveFinanceQuery(rewritten, raw)
+
+	for _, want := range []string{"上个完整自然月", "银行净流入", "账上净利润", "差异"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("effectiveFinanceQuery should preserve %q, got %q", want, got)
+		}
+	}
+	for _, forbidden := range []string{"2026年6月", "2026-06"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("effectiveFinanceQuery should drop injected fixed month %q, got %q", forbidden, got)
+		}
+	}
+}
+
 func TestEffectiveFinanceQueryProtectsSpecificContractSubject(t *testing.T) {
 	t.Parallel()
 

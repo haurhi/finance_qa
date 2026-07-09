@@ -1156,6 +1156,79 @@ test("llm_output patches runner payload text with missing FinanceQA atoms", asyn
   });
 });
 
+test("llm_output guards message-shaped finance answers and preserves facts for before_message_write fallback", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks }) => {
+    const beforeWrite = hooks.get("before_message_write");
+    const llmOutput = hooks.get("llm_output");
+    const sessionKey = "finance-llm-output-message-shaped-session";
+
+    const toolResult = {
+      role: "toolResult",
+      toolName: "finance-query",
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          success: true,
+          finance_facts: {
+            schema_version: "finance_facts.v1",
+            resolved_period: "2026-03",
+            basis: "序时账口径",
+            headline_metric: "账上净利润",
+            headline_amount: 291291.55,
+            source_files: ["《南京优集1-3月序时账.xls》"],
+            source_note: "来源：《南京优集1-3月序时账.xls》",
+            source_update_note: "来源更新时间：2026-04-27 13:33:40",
+            metrics: { "账上净利润": 291291.55 },
+            required_atoms: [
+              "期间：2026-03",
+              "口径：序时账口径",
+              "金额：291291.55 元",
+              "来源：《南京优集1-3月序时账.xls》",
+              "来源更新时间：2026-04-27 13:33:40"
+            ]
+          }
+        })
+      }]
+    };
+
+    beforeWrite({ message: toolResult }, { sessionKey });
+    const messageEvent = {
+      message: {
+        role: "assistant",
+        content: [{
+          type: "text",
+          text: [
+            "2026-06 项目经营口径利润 -1001256.02 元。",
+            "来源：《优集收入、成本计算表 - 上传.xlsx》的【26年Q2收入明细】"
+          ].join("\n")
+        }]
+      }
+    };
+    llmOutput(messageEvent, { sessionKey });
+    assert.match(messageEvent.message.content[0].text, /期间：2026-03/);
+    assert.match(messageEvent.message.content[0].text, /口径：序时账口径/);
+    assert.match(messageEvent.message.content[0].text, /金额：291291\.55 元/);
+    assert.match(messageEvent.message.content[0].text, /来源：《南京优集1-3月序时账\.xls》/);
+    assert.doesNotMatch(messageEvent.message.content[0].text, /2026-06 项目经营口径利润|-1001256\.02/);
+
+    const fallbackSessionKey = "finance-llm-output-unpatchable-fallback-session";
+    beforeWrite({ message: toolResult }, { sessionKey: fallbackSessionKey });
+    llmOutput({ ignored: { text: "2026-06 项目经营口径利润 -1001256.02 元。" } }, { sessionKey: fallbackSessionKey });
+    const persistedWrongAnswer = {
+      role: "assistant",
+      content: [{
+        type: "text",
+        text: "2026-06 项目经营口径利润 -1001256.02 元。来源：未记录"
+      }]
+    };
+    const patched = beforeWrite({ message: persistedWrongAnswer }, { sessionKey: fallbackSessionKey })?.message;
+    assert.match(patched.content[0].text, /期间：2026-03/);
+    assert.match(patched.content[0].text, /金额：291291\.55 元/);
+    assert.doesNotMatch(patched.content[0].text, /-1001256\.02|来源：未记录/);
+  });
+});
+
 test("llm_output still patches stdout after before_message_write patched persisted assistant", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks }) => {
