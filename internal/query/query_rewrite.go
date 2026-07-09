@@ -89,6 +89,9 @@ func RewriteBossQueryWithConfig(question string, anchor time.Time, cfg RuleConfi
 	if shouldForceCompanyScopeContractAggregateWithConfig(q, cfg) {
 		entity = ""
 	}
+	if shouldTreatAsCompanyOfficialARAPQuestion(q, entity) {
+		entity = ""
+	}
 	metric := detectBossMetricWithConfig(q, cfg)
 	perspective, sourceConstraint := detectBossPerspectiveAndSourceWithConfig(q, metric, cfg)
 	scope := detectBossScopeWithConfig(q, entity, cfg)

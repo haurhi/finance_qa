@@ -39,6 +39,9 @@ func (e *Engine) resolveQueryEntity(q string, spec QuerySpec) string {
 	if shouldForceCompanyScopeContractAggregateWithConfig(q, e.currentRuleConfig()) {
 		return ""
 	}
+	if shouldTreatAsCompanyOfficialARAPQuestion(q, spec.Entity) {
+		return ""
+	}
 	entity := spec.Entity
 	if shouldResolveEntityDeeply(spec) {
 		if resolved := e.resolveEntityByScoredCandidates(q); resolved != "" {

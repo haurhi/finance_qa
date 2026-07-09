@@ -67,6 +67,69 @@ func shouldUseCompanyOfficialARAPComparison(question string) bool {
 	return shouldUseOfficialARAPQuestion(question) || containsAny(question, []string{"分别", "哪头", "更重"})
 }
 
+// shouldTreatAsCompanyOfficialARAPQuestion reports whether a question should be
+// answered as company-scope official balance-sheet AR/AP without binding any
+// hallucinated counterparty entity. A non-empty entity is only trusted when it
+// names a real counterparty mentioned in the question — that is, a fragment of
+// the entity survives in the question text AFTER the canonical balance-sheet
+// account terms are removed. This rejects both leftover account fragments such
+// as "和其他应" (a substring of "其他应付款") and fuzzy DB matches such as
+// "对公中间业务收入-网上其他收入" that would otherwise hijack a company-level
+// balance question into the wrong counterparty/audit path.
+func shouldTreatAsCompanyOfficialARAPQuestion(question, entity string) bool {
+	if strings.TrimSpace(entity) != "" && entityAppearsAsCounterparty(question, entity) {
+		return false
+	}
+	if !looksLikeBalanceSheetARAPQuestion(question) {
+		return false
+	}
+	if !strings.Contains(question, "应收") && !strings.Contains(question, "应付") &&
+		!strings.Contains(question, "其他应付款") && !strings.Contains(question, "其他应收款") {
+		return false
+	}
+	return true
+}
+
+// entityAppearsAsCounterparty reports whether the entity names a real
+// counterparty that the user mentioned in the question. It first strips the
+// canonical balance-sheet account terms from the question so that leftover
+// fragments such as "和其他应" (a substring of "其他应付款") are not mistaken
+// for real mentions, then checks whether a multi-character fragment of the
+// entity survives in the remaining text.
+func entityAppearsAsCounterparty(question, entity string) bool {
+	name := strings.TrimSpace(entity)
+	if len([]rune(name)) < 2 {
+		return false
+	}
+	strippedQuestion := stripBalanceSheetAccountTerms(question)
+	if strings.Contains(strippedQuestion, name) {
+		return true
+	}
+	normalized := normalizeEntityText(name)
+	if normalized == "" {
+		return false
+	}
+	if len([]rune(normalized)) >= 2 && strings.Contains(stripBalanceSheetAccountTerms(normalizeEntityText(question)), normalized) {
+		return true
+	}
+	return false
+}
+
+// stripBalanceSheetAccountTerms removes the canonical balance AR/AP account
+// names from the text so that leftover fragments from entity extraction (for
+// example "和其他应", a substring of "其他应付款") are not mistaken for real
+// counterparty mentions.
+func stripBalanceSheetAccountTerms(text string) string {
+	terms := []string{
+		"其他应付款", "其他应收款", "应收账款", "应付账款", "应收票据", "应付票据", "预付账款",
+		"应收", "应付",
+	}
+	s := text
+	for _, term := range terms {
+		s = strings.ReplaceAll(s, term, "")
+	}
+	return s
+}
 func (e *Engine) queryCompanyOfficialARAP(period string) Result {
 	if fallbackPeriod := e.latestARAPBalancePeriodAtOrBefore(period); fallbackPeriod != "" {
 		period = fallbackPeriod

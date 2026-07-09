@@ -76,6 +76,58 @@ func TestResolveQueryRoutingTreatsExplicitBankCashAsCompanyCash(t *testing.T) {
 	}
 }
 
+func TestOfficialBalanceSheetARAPRoutingIgnoresCounterpartyFragments(t *testing.T) {
+	dbPath := buildQueryContextResolutionDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO balance_sheet(company, period, account_code, account_name, opening_balance, closing_balance) VALUES
+		('测试公司','2026-03','1122','应收账款',0,1897.60),
+		('测试公司','2026-03','2202','应付账款',0,4585.12),
+		('测试公司','2026-03','2241','其他应付款',0,500.00);
+		INSERT INTO bank_statement(company, transaction_date, counterparty_name, summary, debit_amount, credit_amount)
+		VALUES ('测试公司','2026-03-18','对公中间业务收入-网上其他收入','手续费',75,0);
+	`); err != nil {
+		t.Fatalf("seed AR/AP balance data: %v", err)
+	}
+	_ = db.Close()
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.April, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	route := engine.resolveQueryRouting("从账上看，上个完整自然月的应收账款、应付账款和其他应付款分别有多少？")
+	if route.spec.QueryFamily != QueryFamilyARAP {
+		t.Fatalf("query_family = %s, want %s", route.spec.QueryFamily, QueryFamilyARAP)
+	}
+	if route.entity != "" || route.hasRealEntity || route.spec.Entity != "" {
+		t.Fatalf("entity=%q spec.entity=%q hasRealEntity=%t, want company-scope balance AR/AP", route.entity, route.spec.Entity, route.hasRealEntity)
+	}
+
+	res := engine.Query("从账上看，上个完整自然月的应收账款、应付账款和其他应付款分别有多少？")
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["source"]; got != "balance_sheet" {
+		t.Fatalf("source = %v, want balance_sheet; data=%+v message=%s", got, res.Data, res.Message)
+	}
+	if got := res.Data["period"]; got != "2026-03" {
+		t.Fatalf("period = %v, want latest available balance 2026-03", got)
+	}
+	if strings.Contains(res.Message, "对公中间业务收入") || strings.Contains(res.Message, "供应商相关") {
+		t.Fatalf("official AR/AP should not fall into counterparty audit, message=%q", res.Message)
+	}
+	for _, want := range []string{"应收账款", "应付账款", "其他应付款"} {
+		if !strings.Contains(res.Message, want) {
+			t.Fatalf("message = %q, want include %q", res.Message, want)
+		}
+	}
+}
+
 func TestExplicitBankCashReceiptQueryAnswersFromBankStatement(t *testing.T) {
 	dbPath := buildQueryContextResolutionDB(t)
 	engine, err := NewEngine(dbPath, "测试公司")
