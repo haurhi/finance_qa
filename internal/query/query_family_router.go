@@ -54,6 +54,9 @@ func resolveMetricDrivenQueryFamily(q, entity, from, to string, cfg RuleConfig, 
 	case shouldPreferCoreMetricSummaryWithConfig(q, entity, hasRealishEntity, from, to, cfg):
 		return QueryFamilyCoreMetric, true
 	case hasRealishEntity && containsAny(q, counterpartyMetricKeywords(cfg)):
+		if looksLikeBalanceSheetARAPQuestion(q) {
+			return QueryFamilyCoreMetric, true
+		}
 		return QueryFamilyCounterparty, true
 	default:
 		return "", false
