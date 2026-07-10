@@ -1008,30 +1008,29 @@ function setLatestFinanceQuestionForToolScope(event, ctx, latestQuestion) {
 
 function takeLatestFinanceQuestionForTool(ctx) {
   const scope = financeScope(undefined, ctx);
-  if (latestFinanceQuestionBySession.has(scope.primaryKey)) {
-    const question = latestFinanceQuestionBySession.get(scope.primaryKey) || "";
-    latestFinanceQuestionBySession.delete(scope.primaryKey);
+  if (scope.runKey) {
+    if (!latestFinanceQuestionBySession.has(scope.runKey)) return "";
+    const question = latestFinanceQuestionBySession.get(scope.runKey) || "";
+    latestFinanceQuestionBySession.delete(scope.runKey);
     if (latestFinanceQuestionForTool === question) latestFinanceQuestionForTool = "";
     return question;
   }
-  if (!scope.runKey) {
-    const runKeys = activeFinanceRunKeysForSession(scope);
-    if (runKeys.length > 1) return "";
-    if (runKeys.length === 1) {
-      const key = runKeys[0];
-      if (latestFinanceQuestionBySession.has(key)) {
-        const question = latestFinanceQuestionBySession.get(key) || "";
-        latestFinanceQuestionBySession.delete(key);
-        return question;
-      }
-      return "";
-    }
-    if (latestFinanceQuestionBySession.has(scope.sessionStateKey)) {
-      const question = latestFinanceQuestionBySession.get(scope.sessionStateKey) || "";
-      latestFinanceQuestionBySession.delete(scope.sessionStateKey);
-      if (latestFinanceQuestionForTool === question) latestFinanceQuestionForTool = "";
+  const runKeys = activeFinanceRunKeysForSession(scope);
+  if (runKeys.length > 1) return "";
+  if (runKeys.length === 1) {
+    const key = runKeys[0];
+    if (latestFinanceQuestionBySession.has(key)) {
+      const question = latestFinanceQuestionBySession.get(key) || "";
+      latestFinanceQuestionBySession.delete(key);
       return question;
     }
+    return "";
+  }
+  if (latestFinanceQuestionBySession.has(scope.sessionStateKey)) {
+    const question = latestFinanceQuestionBySession.get(scope.sessionStateKey) || "";
+    latestFinanceQuestionBySession.delete(scope.sessionStateKey);
+    if (latestFinanceQuestionForTool === question) latestFinanceQuestionForTool = "";
+    return question;
   }
   const fallback = latestFinanceQuestionForTool;
   latestFinanceQuestionForTool = "";

@@ -386,6 +386,41 @@ test("finance-query does not use global fallback after all active run raw questi
   });
 });
 
+test("finance-query does not use session raw while multiple runs remain active", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const sessionKey = "finance-active-runs-with-session-raw";
+    const bankQuestion = "银行卡上，上个完整自然月净现金流是多少？";
+    const revenueQuestion = "收入表中最新月份项目结算营收是多少？";
+
+    await hooks.get("before_prompt_build")({
+      prompt: bankQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: bankQuestion }] }]
+    }, { runId: "session-raw-run-a", sessionKey });
+    await hooks.get("before_prompt_build")({
+      prompt: revenueQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: revenueQuestion }] }]
+    }, { runId: "session-raw-run-b", sessionKey });
+
+    const sessionQuestion = "供应商上个完整自然月付款是多少？";
+    await hooks.get("before_prompt_build")({
+      prompt: sessionQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: sessionQuestion }] }]
+    }, { sessionKey });
+    await tools.get("finance-query").execute("ambiguous-session-raw", {
+      query: "2026年6月供应商付款",
+      raw_user_query: "模型自带的错误原问题"
+    }, { sessionKey });
+
+    assert.equal(Object.hasOwn(toolCalls.at(-1).arguments, "raw_user_query"), false);
+  }, {
+    toolPayload: {
+      success: true,
+      finance_facts: { required_atoms: ["金额：1 元"] }
+    }
+  });
+});
+
 test("finance-query execute preserves reconciliation difference intent from raw user question", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
