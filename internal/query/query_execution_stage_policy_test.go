@@ -33,7 +33,7 @@ func TestResolveSourceExecutionStagesPrefersOrchestratedContractAggregate(t *tes
 }
 
 func TestResolveSourceExecutionStagesKeepsCoreMetricFallbackWhenContractAggregateMissing(t *testing.T) {
-	cfg := getRuleConfig()
+	cfg := defaultRuleConfig()
 	cfg.MetricKeywordLexicon[metricKeyProfit] = []string{"净赚"}
 	ctx := queryExecutionContext{
 		q:             "2026年2月净赚是多少？",
