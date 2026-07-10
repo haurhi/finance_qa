@@ -39,10 +39,6 @@ func (e *Engine) tryCompoundSourceQuery(ctx queryExecutionContext) (Result, Quer
 	if len(metrics) == 0 {
 		return Result{}, ctx.spec, false
 	}
-	if !ctx.hasRealEntity {
-		return Result{}, ctx.spec, false
-	}
-
 	entities := e.resolveMentionedContractCustomers(ctx.q)
 	groundedEntities := entities[:0]
 	for _, entity := range entities {

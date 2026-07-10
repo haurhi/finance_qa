@@ -25,6 +25,7 @@ func stripKnownPeriodTokens(text string) string {
 		regexp.MustCompile(`(?i)(?:20)?\d{2}\s*年\s*(?:上半年|下半年|全年|全年度|整年|年度|累计|年内)`),
 		regexp.MustCompile(`(?i)(?:20)?\d{2}\s*年\s*([0-1]?\d|[一二三四五六七八九十两]{1,3})\s*月`),
 		regexp.MustCompile(`20\d{2}年?`),
+		regexp.MustCompile(`(?i)\b\d{2}\s*年`),
 		regexp.MustCompile(`[0-3]?\d月`),
 		regexp.MustCompile(`[0-3]?\d日`),
 	}

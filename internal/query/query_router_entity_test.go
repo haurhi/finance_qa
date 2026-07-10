@@ -61,3 +61,21 @@ func TestEntityAppearsInQuestionTextSupportsCoordinatedShortAliases(t *testing.T
 		}
 	}
 }
+
+func TestEntityAppearsInQuestionTextIgnoresLooseYearAfterShortAlias(t *testing.T) {
+	question := "四川其妙和辽宁金程25年Q4未付款项目明细"
+	entity := "辽宁金程信息科技有限公司"
+
+	if !entityAppearsInQuestionText(question, entity) {
+		t.Fatalf("entityAppearsInQuestionText(%q, %q) = false, want true", question, entity)
+	}
+}
+
+func TestEntityAppearsInQuestionTextIgnoresLeadingCommandBeforeShortAlias(t *testing.T) {
+	question := "给我统计一下四川其妙和辽宁金程25年Q4未付款项目明细"
+	entity := "四川其妙科技有限公司"
+
+	if !entityAppearsInQuestionText(question, entity) {
+		t.Fatalf("entityAppearsInQuestionText(%q, %q) = false, want true", question, entity)
+	}
+}
