@@ -340,6 +340,7 @@ func TestExplicitJournalNetProfitUsesSingleBookPerspective(t *testing.T) {
 		"按序时账口径，最新完整月份账上净利润是多少？",
 		"2026年3月 序时账 净利润",
 		"从账上看，上一个完整月份净利润是多少？",
+		"最近完整月份的净利润是多少？",
 	} {
 		res := engine.Query(question)
 		if !res.Success {

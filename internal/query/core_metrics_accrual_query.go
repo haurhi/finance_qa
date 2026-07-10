@@ -121,7 +121,7 @@ func asksExplicitJournalOnlySource(q string) bool {
 }
 
 func asksBookOnlyNetProfit(q string) bool {
-	return strings.Contains(q, "账上") && asksExplicitNetProfit(q)
+	return asksExplicitNetProfit(q) && !containsAny(q, []string{"项目", "合同", "收入", "营收", "成本", "整体", "挣到钱", "赚到钱", "经营"})
 }
 
 func buildAccrualCoreMetricResultData(period string, year, month int, bookSource string, requestedMetrics []string, metric string, accountValue, displayedBookProfit float64, book monthlyBookView, cashFlowSummary, bridgeMap map[string]any) map[string]any {

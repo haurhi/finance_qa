@@ -209,7 +209,7 @@ func shouldUseExplicitFinancialAccountQuestion(q string) bool {
 	return containsAny(q, []string{
 		"序时账", "序时帐", "凭证", "利润表", "财务账", "会计账", "报表口径", "账上",
 		"科目余额", "发生额及余额", "余额表", "资产负债表",
-	}) || looksLikeBalanceSheetARAPQuestion(q)
+	}) || asksBookOnlyNetProfit(q) || looksLikeBalanceSheetARAPQuestion(q)
 }
 
 // looksLikeBalanceSheetARAPQuestion detects company-level balance sheet AR/AP questions
