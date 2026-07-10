@@ -152,17 +152,159 @@ test("finance-query execute preserves raw user finance question for protected te
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
     const rawUserQuestion = "从账上看，上一个完整月份净利润是多少？";
+    const rewrittenQuery = "2026-06 净利润";
     await hooks.get("before_prompt_build")({
       prompt: rawUserQuestion,
       messages: [{ role: "user", content: [{ type: "text", text: rawUserQuestion }] }]
     }, { sessionKey: "finance-protected-raw-query" });
 
     await tools.get("finance-query").execute("call-rewritten-query", {
-      query: "2026-06 净利润"
+      query: rewrittenQuery
     });
 
-    assert.equal(toolCalls.at(-1).arguments.query, rawUserQuestion);
+    assert.equal(toolCalls.at(-1).arguments.query, rewrittenQuery);
     assert.equal(toolCalls.at(-1).arguments.raw_user_query, rawUserQuestion);
+  });
+});
+
+test("finance-query transports model query unchanged and raw question separately", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const rawUserQuestion = "收入表中最新月份的营收数据是多少？";
+    const rewrittenQuery = "收入表最新月份营收数据";
+    const context = { sessionKey: "finance-query-transport-fields" };
+
+    await hooks.get("before_prompt_build")({
+      prompt: rawUserQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: rawUserQuestion }] }]
+    }, context);
+
+    await tools.get("finance-query").execute("call-transport-fields", {
+      query: rewrittenQuery
+    }, context);
+
+    assert.equal(toolCalls.at(-1).arguments.query, rewrittenQuery);
+    assert.equal(toolCalls.at(-1).arguments.raw_user_query, rawUserQuestion);
+  });
+});
+
+test("finance-query keeps factory run scope when runtime context is partial", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const rawUserQuestion = "老板，从账上看，最近完整月份的净利润是多少？";
+    const rewrittenQuery = "2026年6月净利润";
+    const factoryContext = { runId: "run-a", sessionKey: "session-a" };
+    const financeQuery = tools.get("finance-query").create(factoryContext);
+
+    await hooks.get("before_prompt_build")({
+      prompt: rawUserQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: rawUserQuestion }] }]
+    }, factoryContext);
+
+    await financeQuery.execute("call-run-a", {
+      query: rewrittenQuery
+    }, { sessionKey: "session-a" });
+
+    assert.equal(toolCalls.at(-1).arguments.query, rewrittenQuery);
+    assert.equal(toolCalls.at(-1).arguments.raw_user_query, rawUserQuestion);
+  });
+});
+
+test("finance-query overwrites model supplied raw_user_query with the current run question", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const rawUserQuestion = "老板，从账上看，最近完整月份的净利润是多少？";
+    const context = { runId: "authoritative-raw-run", sessionKey: "authoritative-raw-session" };
+    const financeQuery = tools.get("finance-query").create(context);
+
+    await hooks.get("before_prompt_build")({
+      prompt: rawUserQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: rawUserQuestion }] }]
+    }, context);
+
+    await financeQuery.execute("call-authoritative-raw", {
+      query: "最近完整月份净利润",
+      raw_user_query: "最近完整月份净利润是多少？"
+    }, {});
+
+    assert.equal(toolCalls.at(-1).arguments.raw_user_query, rawUserQuestion);
+  });
+});
+
+test("finance-query concurrent runs do not exchange raw questions", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const sessionKey = "finance-concurrent-session";
+    const bankContext = { runId: "finance-run-a", sessionKey };
+    const revenueContext = { runId: "finance-run-b", sessionKey };
+    const bankQuestion = "银行卡上，上个完整自然月净现金流是多少？";
+    const revenueQuestion = "收入表中最新月份项目结算营收是多少？";
+    const bankTool = tools.get("finance-query").create(bankContext);
+    const revenueTool = tools.get("finance-query").create(revenueContext);
+
+    await hooks.get("before_prompt_build")({
+      prompt: bankQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: bankQuestion }] }]
+    }, bankContext);
+    await hooks.get("before_prompt_build")({
+      prompt: revenueQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: revenueQuestion }] }]
+    }, revenueContext);
+
+    const executeCallStart = toolCalls.length;
+    await revenueTool.execute("call-run-b", {
+      query: "2026年6月项目结算营收"
+    }, { sessionKey });
+    await bankTool.execute("call-run-a", {
+      query: "2026年6月银行卡净现金流"
+    }, { sessionKey });
+
+    const [revenueCall, bankCall] = toolCalls.slice(executeCallStart);
+    assert.equal(revenueCall.arguments.query, "2026年6月项目结算营收");
+    assert.equal(revenueCall.arguments.raw_user_query, revenueQuestion);
+    assert.equal(bankCall.arguments.query, "2026年6月银行卡净现金流");
+    assert.equal(bankCall.arguments.raw_user_query, bankQuestion);
+  }, {
+    toolPayload: {
+      success: true,
+      finance_facts: { required_atoms: ["金额：1 元"] }
+    }
+  });
+});
+
+test("finance-query fails closed when one session has multiple ambiguous active runs", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const sessionKey = "finance-ambiguous-session";
+    const bankQuestion = "银行卡上，上个完整自然月净现金流是多少？";
+    const revenueQuestion = "收入表中最新月份项目结算营收是多少？";
+
+    await hooks.get("before_prompt_build")({
+      prompt: bankQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: bankQuestion }] }]
+    }, { runId: "ambiguous-run-a", sessionKey });
+    await hooks.get("before_prompt_build")({
+      prompt: revenueQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: revenueQuestion }] }]
+    }, { runId: "ambiguous-run-b", sessionKey });
+    await hooks.get("before_prompt_build")({
+      prompt: "供应商上个完整自然月付款是多少？",
+      messages: [{ role: "user", content: [{ type: "text", text: "供应商上个完整自然月付款是多少？" }] }]
+    }, { sessionKey: "unrelated-session-fallback" });
+
+    await tools.get("finance-query").execute("call-ambiguous", {
+      query: "2026年6月净现金流",
+      raw_user_query: "模型自带的错误原问题"
+    }, { sessionKey });
+
+    const args = toolCalls.at(-1).arguments;
+    assert.equal(args.query, "2026年6月净现金流");
+    assert.equal(Object.hasOwn(args, "raw_user_query"), false);
+  }, {
+    toolPayload: {
+      success: true,
+      finance_facts: { required_atoms: ["金额：1 元"] }
+    }
   });
 });
 
@@ -181,9 +323,7 @@ test("finance-query execute preserves reconciliation difference intent from raw 
 
     const args = toolCalls.at(-1).arguments;
     assert.equal(args.raw_user_query, rawUserQuestion);
-    assert.match(args.query, /差多少/);
-    assert.match(args.query, /银行净流入/);
-    assert.match(args.query, /账上净利润/);
+    assert.equal(args.query, "上个完整自然月银行净流入和账上净利润");
   });
 });
 
@@ -202,10 +342,7 @@ test("finance-query execute keeps rewritten entity hints while protecting dynami
 
     const args = toolCalls.at(-1).arguments;
     assert.equal(args.raw_user_query, rawUserQuestion);
-    assert.match(args.query, /上个完整自然月/);
-    assert.match(args.query, /项目口径/);
-    assert.match(args.query, /百度在线网络技术\(北京\)有限公司/);
-    assert.doesNotMatch(args.query, /2026年6月|2026-06/);
+    assert.equal(args.query, "2026年6月 百度在线网络技术(北京)有限公司 项目应收未收");
   });
 });
 
@@ -231,9 +368,7 @@ test("finance-query protected question is scoped per OpenClaw session", async ()
 
     const bankArgs = toolCalls.at(-1).arguments;
     assert.equal(bankArgs.raw_user_query, bankQuestion);
-    assert.match(bankArgs.query, /上个完整自然月/);
-    assert.match(bankArgs.query, /银行卡/);
-    assert.doesNotMatch(bankArgs.query, /2026年6月|项目结算营收/);
+    assert.equal(bankArgs.query, "2026年6月 银行卡 净现金流");
 
     await tools.get("finance-query").execute("revenue-call", {
       query: "2026年6月 收入表 项目结算营收"
@@ -241,9 +376,7 @@ test("finance-query protected question is scoped per OpenClaw session", async ()
 
     const revenueArgs = toolCalls.at(-1).arguments;
     assert.equal(revenueArgs.raw_user_query, revenueQuestion);
-    assert.match(revenueArgs.query, /上个完整自然月/);
-    assert.match(revenueArgs.query, /收入表/);
-    assert.doesNotMatch(revenueArgs.query, /银行卡/);
+    assert.equal(revenueArgs.query, "2026年6月 收入表 项目结算营收");
   });
 });
 
@@ -271,8 +404,7 @@ test("finance prompt hook extracts original question from patrol wrapper without
 
     const args = toolCalls.at(-1).arguments;
     assert.equal(args.raw_user_query, rawUserQuestion);
-    assert.match(args.query, /上个完整自然月/);
-    assert.doesNotMatch(args.query, /巡检要求|只读巡检请求|2026年6月|2026-06/);
+    assert.equal(args.query, "按项目应收口径，2025年10月到2026年6月底未回款合计多少？");
   });
 });
 
@@ -300,7 +432,7 @@ test("finance prompt hook prefers current prompt over stale session history", as
       query: "2026年3月 项目结算营收"
     });
 
-    assert.equal(toolCalls.at(-1).arguments.query, "收入表中最新月份项目结算营收是多少？");
+    assert.equal(toolCalls.at(-1).arguments.query, "2026年3月 项目结算营收");
     assert.equal(toolCalls.at(-1).arguments.raw_user_query, "收入表中最新月份项目结算营收是多少？");
   });
 });
@@ -1466,10 +1598,19 @@ async function withFinancePluginHarness(toolCalls, run, options = {}) {
       registerTool(tool, options) {
         const name = options?.name || tool.name;
         if (typeof tool === "function") {
+          const create = (factoryCtx = {}) => {
+            const instance = tool(factoryCtx);
+            return {
+              execute(toolCallId, rawParams, runtimeCtx) {
+                return instance.execute(toolCallId, rawParams, runtimeCtx);
+              }
+            };
+          };
           tools.set(name, {
             execute(toolCallId, rawParams, ctx = {}) {
-              return tool(ctx).execute(toolCallId, rawParams, ctx);
-            }
+              return create(ctx).execute(toolCallId, rawParams, ctx);
+            },
+            create
           });
           return;
         }

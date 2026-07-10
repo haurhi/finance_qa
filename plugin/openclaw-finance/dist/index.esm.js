@@ -180,32 +180,6 @@ const FINANCE_KEYWORDS = [
   "货币资金"
 ];
 
-const FINANCE_QUERY_PROTECTION_TERMS = [
-  "账上",
-  "科目余额",
-  "资产负债表",
-  "利润表",
-  "序时账",
-  "银行流水",
-  "银行卡",
-  "银行账户",
-  "官方余额表",
-  "财务口径",
-  "项目口径",
-  "合同口径",
-  "实际到账",
-  "实际支出",
-  "应收账款",
-  "应付账款",
-  "差多少",
-  "差异金额",
-  "名义差额",
-  "差异",
-  "差额",
-  "相差",
-  "差了"
-];
-
 // MCP Client for communicating with financeqa serve
 class MCPClient {
   constructor(binaryPath) {
@@ -615,76 +589,6 @@ function contextualFinanceQuestion(currentQuestion, messages) {
   return `${previous}；${current}`;
 }
 
-function missingProtectedFinanceTerms(protectedQuestion, rawQuestion) {
-  const protectedText = financeQuestionText(protectedQuestion);
-  const rawText = financeQuestionText(rawQuestion);
-  if (!protectedText || !rawText || protectedText === rawText) return [];
-  return FINANCE_QUERY_PROTECTION_TERMS.filter((term) => protectedText.includes(term) && !rawText.includes(term));
-}
-
-const FINANCE_DYNAMIC_PERIOD_RE = /(最新月份|最新完整月份|最近完整月份|上个月|上月|上个完整自然月|上一个完整自然月|上个完整月|上一个完整月|至今|到现在|目前|当前|最新)/;
-const FINANCE_ABSOLUTE_MONTH_RE = /20\d{2}\s*年\s*(?:0?[1-9]|1[0-2])\s*月|20\d{2}\s*[-/.]\s*(?:0?[1-9]|1[0-2])/g;
-
-function hasDynamicFinancePeriod(rawText) {
-  return FINANCE_DYNAMIC_PERIOD_RE.test(financeQuestionText(rawText));
-}
-
-function absoluteFinanceMonthKeys(rawText) {
-  const text = financeQuestionText(rawText);
-  const keys = new Set();
-  for (const match of text.matchAll(/(20\d{2})\s*年\s*(0?[1-9]|1[0-2])\s*月/g)) {
-    keys.add(`${match[1]}-${String(Number(match[2])).padStart(2, "0")}`);
-  }
-  for (const match of text.matchAll(/(20\d{2})\s*[-/.]\s*(0?[1-9]|1[0-2])/g)) {
-    keys.add(`${match[1]}-${String(Number(match[2])).padStart(2, "0")}`);
-  }
-  return keys;
-}
-
-function hasAbsoluteFinanceMonth(rawText) {
-  return absoluteFinanceMonthKeys(rawText).size > 0;
-}
-
-function keepsAllAbsoluteFinanceMonths(protectedQuestion, rawQuestion) {
-  const protectedKeys = absoluteFinanceMonthKeys(protectedQuestion);
-  if (!protectedKeys.size) return true;
-  const rawKeys = absoluteFinanceMonthKeys(rawQuestion);
-  for (const key of protectedKeys) {
-    if (!rawKeys.has(key)) return false;
-  }
-  return true;
-}
-
-function stripFinancePeriodPhrases(rawText) {
-  return financeQuestionText(rawText)
-    .replace(FINANCE_ABSOLUTE_MONTH_RE, " ")
-    .replace(FINANCE_DYNAMIC_PERIOD_RE, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function mergeProtectedFinanceQuestion(protectedQuestion, rawQuestion) {
-  const protectedText = financeQuestionText(protectedQuestion);
-  const rawText = financeQuestionText(rawQuestion);
-  if (!protectedText || !rawText || protectedText === rawText) return protectedText || rawText;
-  let hint = rawText;
-  if (hasDynamicFinancePeriod(protectedText) || hasAbsoluteFinanceMonth(protectedText)) {
-    hint = stripFinancePeriodPhrases(hint);
-  }
-  if (!hint || protectedText.includes(hint)) return protectedText;
-  return `${protectedText}；补充识别：${hint}`;
-}
-
-function shouldPreferProtectedFinanceQuestion(protectedQuestion, rawQuestion) {
-  const protectedText = financeQuestionText(protectedQuestion);
-  const rawText = financeQuestionText(rawQuestion);
-  if (!protectedText || !rawText || protectedText === rawText) return false;
-  if (!isFinanceQuestion(protectedText) || !isFinanceQuestion(rawText)) return false;
-  if (hasDynamicFinancePeriod(protectedText) && !hasDynamicFinancePeriod(rawText)) return true;
-  if (hasAbsoluteFinanceMonth(protectedText) && !keepsAllAbsoluteFinanceMonths(protectedText, rawText)) return true;
-  return missingProtectedFinanceTerms(protectedText, rawText).length > 0;
-}
-
 function financeQuestionForPromptEvent(event) {
   const prompt = financeQuestionText(event?.prompt || "");
   const latestUserText = latestUserTextFromMessages(event?.messages);
@@ -976,6 +880,12 @@ function firstNonEmptyString(...values) {
   return "";
 }
 
+function financeExecutionContext(toolCtx, runtimeCtx) {
+  const factory = isRecord(toolCtx) ? toolCtx : {};
+  const runtime = isRecord(runtimeCtx) && !isAbortSignal(runtimeCtx) ? runtimeCtx : {};
+  return { ...factory, ...runtime };
+}
+
 function financeScope(event, ctx) {
   const runId = firstNonEmptyString(ctx?.runId, event?.runId, event?.message?.runId);
   const sessionKey = firstNonEmptyString(ctx?.sessionKey, event?.sessionKey, event?.message?.sessionKey);
@@ -1112,6 +1022,7 @@ function takeLatestFinanceQuestionForTool(ctx) {
       latestFinanceQuestionBySession.delete(key);
       return question;
     }
+    if (runKeys.length > 1) return "";
     if (latestFinanceQuestionBySession.has(scope.sessionStateKey)) {
       const question = latestFinanceQuestionBySession.get(scope.sessionStateKey) || "";
       latestFinanceQuestionBySession.delete(scope.sessionStateKey);
@@ -1831,24 +1742,19 @@ function createFinanceTool(name, description, parameters, toolCtx) {
     description,
     parameters,
     async execute(_toolCallId, rawParams, runtimeCtx) {
-      const executionCtx = isRecord(runtimeCtx) && !isAbortSignal(runtimeCtx) ? runtimeCtx : toolCtx;
+      const executionCtx = financeExecutionContext(toolCtx, runtimeCtx);
       const protectedQuestion = name === "finance-query" ? takeLatestFinanceQuestionForTool(executionCtx) : "";
-      const rawParamsObject = rawParams && typeof rawParams === "object" ? rawParams : {};
-      const rawQuery = name === "finance-query" ? financeQuestionText(rawParamsObject.query || "") : "";
-      const shouldUseProtectedQuestion = protectedQuestion && (
-        !rawQuery ||
-        isRetryOrContinuation(rawQuery) ||
-        isContextDependentFinanceFollowup(rawQuery) ||
-        shouldPreferProtectedFinanceQuestion(protectedQuestion, rawQuery)
-      );
+      const rawParamsObject = isRecord(rawParams) ? rawParams : {};
+      const { raw_user_query: _discardModelRawQuery, ...forwardedParams } = rawParamsObject;
+      const modelQuery = name === "finance-query" ? financeQuestionText(rawParamsObject.query || "") : "";
       const params = name === "finance-query"
-        ? (rawQuery || shouldUseProtectedQuestion
+        ? (modelQuery
           ? {
-            ...rawParamsObject,
-            query: shouldUseProtectedQuestion ? mergeProtectedFinanceQuestion(protectedQuestion, rawQuery) : rawQuery,
+            ...forwardedParams,
+            query: modelQuery,
             ...(protectedQuestion ? { raw_user_query: protectedQuestion } : {})
           }
-          : rawParams)
+          : forwardedParams)
         : rawParams;
       const result = await callFinanceTool(name, params);
       if (name === "finance-query") {
