@@ -360,19 +360,23 @@ func specificFinanceRosterSubjectCandidates(text string) []string {
 }
 
 func hasSpecificFinanceRosterIdentifier(subject string) bool {
+	markerIndex := -1
+	markerLength := 0
 	for _, marker := range []string{"合同", "协议", "项目"} {
-		idx := strings.LastIndex(subject, marker)
-		if idx < 0 {
-			continue
+		if idx := strings.LastIndex(subject, marker); idx > markerIndex {
+			markerIndex = idx
+			markerLength = len(marker)
 		}
-		suffix := strings.TrimSpace(subject[idx+len(marker):])
-		upperSuffix := strings.ToUpper(strings.TrimLeft(suffix, "-－"))
-		if strings.HasPrefix(upperSuffix, "ID") {
-			return false
-		}
-		return strings.HasPrefix(suffix, "-") || strings.HasPrefix(suffix, "－") || strings.ContainsAny(suffix, "0123456789")
 	}
-	return false
+	if markerIndex < 0 {
+		return false
+	}
+	suffix := strings.TrimSpace(subject[markerIndex+markerLength:])
+	upperSuffix := strings.ToUpper(strings.TrimLeft(suffix, "-－"))
+	if strings.HasPrefix(upperSuffix, "ID") {
+		return false
+	}
+	return strings.HasPrefix(suffix, "-") || strings.HasPrefix(suffix, "－") || strings.ContainsAny(suffix, "0123456789")
 }
 
 func stripFinancePeriodPhrases(text string) string {

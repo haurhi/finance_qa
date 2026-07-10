@@ -116,6 +116,13 @@ func TestEffectiveFinanceQueryProtectsCompanyScopeAndContinuationSemantics(t *te
 			forbid:    []string{"项目ID", "补充识别："},
 		},
 		{
+			name:      "roster_uses_rightmost_subject_marker",
+			raw:       "25年到26年未付款的项目都有哪些，对应的金额是多少？",
+			rewritten: "列出合同2025年到2026年项目ID和对应金额",
+			want:      []string{"25年到26年", "都有哪些", "金额"},
+			forbid:    []string{"项目ID", "补充识别："},
+		},
+		{
 			name:      "entity_specific_roster_control",
 			raw:       "百度未付款的项目都有哪些？",
 			rewritten: "百度在线网络技术(北京)有限公司",
