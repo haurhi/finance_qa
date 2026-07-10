@@ -62,10 +62,13 @@ LOCAL_PLUGIN_PACKAGE="$ROOT_DIR/plugin/openclaw-finance/package.json"
 LOCAL_CLAUDE_WRAPPER="$ROOT_DIR/tests/scripts/claude_finance_final_answer.sh"
 LOCAL_ONLINE_CHECKER="$ROOT_DIR/tests/scripts/run_online_agent_final_answer_check.py"
 LOCAL_MCP_SYSTEMD="$ROOT_DIR/deploy/systemd/financeqa-mcp.service"
+LOCAL_RULES_CONFIG="$ROOT_DIR/config/rules.json"
 LOCAL_FINANCEQA_BIN="$(mktemp "${TMPDIR:-/tmp}/financeqa-linux-amd64.XXXXXX")"
 trap 'rm -f "$LOCAL_FINANCEQA_BIN"' EXIT
 
 REMOTE_REPO_DIR="${REMOTE_REPO_DIR:-$REMOTE_HOME/finance_qa}"
+REMOTE_RULES_CONFIG="${REMOTE_RULES_CONFIG:-$REMOTE_REPO_DIR/config/rules.json}"
+REMOTE_RULES_UPLOAD="${REMOTE_RULES_UPLOAD:-$REMOTE_RULES_CONFIG.upload.$$}"
 REMOTE_FINANCEQA_BIN="${REMOTE_FINANCEQA_BIN:-$REMOTE_REPO_DIR/bin/financeqa}"
 REMOTE_FINANCEQA_UPLOAD="${REMOTE_FINANCEQA_UPLOAD:-$REMOTE_FINANCEQA_BIN.upload.$$}"
 REMOTE_FINANCEQA_BIN_DIR="$(dirname "$REMOTE_FINANCEQA_BIN")"
@@ -116,6 +119,10 @@ if deploy_server && [[ ! -f "$LOCAL_MCP_SYSTEMD" ]]; then
   echo "missing local FinanceQA MCP systemd unit: $LOCAL_MCP_SYSTEMD" >&2
   exit 1
 fi
+if deploy_server && [[ ! -f "$LOCAL_RULES_CONFIG" ]]; then
+  echo "missing local FinanceQA rules config: $LOCAL_RULES_CONFIG" >&2
+  exit 1
+fi
 
 ssh_remote "$SERVER" "mkdir -p '$REMOTE_REPO_DIR'"
 
@@ -144,7 +151,10 @@ else
 fi
 
 if deploy_server; then
-  echo "[5/9] build local Linux financeqa Go MCP binary and upload"
+  echo "[5/9] upload rules config, build local Linux financeqa Go MCP binary, and upload"
+  ssh_remote "$SERVER" "mkdir -p '$(dirname "$REMOTE_RULES_CONFIG")' && rm -f '$REMOTE_RULES_UPLOAD'"
+  scp_remote "$LOCAL_RULES_CONFIG" "$SERVER:$REMOTE_RULES_UPLOAD"
+  ssh_remote "$SERVER" "chmod 644 '$REMOTE_RULES_UPLOAD' && mv -f '$REMOTE_RULES_UPLOAD' '$REMOTE_RULES_CONFIG'"
   (
     cd "$ROOT_DIR"
     GOOS=linux GOARCH=amd64 go build -o "$LOCAL_FINANCEQA_BIN" ./cmd/financeqa/...
