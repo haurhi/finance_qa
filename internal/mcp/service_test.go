@@ -52,6 +52,62 @@ func TestEffectiveFinanceQueryProtectsDynamicPeriodAndKeepsEntityHints(t *testin
 	}
 }
 
+func TestEffectiveFinanceQueryProtectsCompanyScopeAndContinuationSemantics(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name      string
+		raw       string
+		rewritten string
+		want      []string
+		forbid    []string
+	}{
+		{
+			name:      "company_project_roster",
+			raw:       "25年到26年未付款的项目都有哪些，对应的金额是多少？",
+			rewritten: "2025年到2026年未付款的项目明细，包括项目名称和对应金额",
+			want:      []string{"25年到26年", "都有哪些", "金额"},
+			forbid:    []string{"补充识别：", "包括项目名称"},
+		},
+		{
+			name:      "income_table_source",
+			raw:       "帮我看下收入表中最新月份的营收数据。",
+			rewritten: "最新月份营收数据",
+			want:      []string{"收入表", "最新月份", "营收"},
+		},
+		{
+			name:      "non_semantic_continuation",
+			raw:       "最近完整月份净利润是多少？",
+			rewritten: "再算一次",
+			want:      []string{"最近完整月份", "净利润"},
+			forbid:    []string{"再算一次", "补充识别："},
+		},
+		{
+			name:      "specific_entity_hint_control",
+			raw:       "上个完整自然月百度这个客户还有多少没收回来？",
+			rewritten: "百度在线网络技术(北京)有限公司 项目应收未收",
+			want:      []string{"上个完整自然月", "百度在线网络技术(北京)有限公司"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := effectiveFinanceQuery(tt.rewritten, tt.raw)
+
+			for _, want := range tt.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("effectiveFinanceQuery should preserve %q, got %q", want, got)
+				}
+			}
+			for _, forbidden := range tt.forbid {
+				if strings.Contains(got, forbidden) {
+					t.Errorf("effectiveFinanceQuery should remove %q, got %q", forbidden, got)
+				}
+			}
+		})
+	}
+}
+
 func TestEffectiveFinanceQueryProtectsReconciliationDifferenceIntent(t *testing.T) {
 	t.Parallel()
 

@@ -21,7 +21,7 @@ var financeQueryKeywords = []string{
 
 var protectedFinanceTerms = []string{
 	"账上", "序时账", "序时帐", "凭证",
-	"科目余额", "资产负债表", "利润表", "余额表",
+	"科目余额", "资产负债表", "利润表", "收入表", "余额表",
 	"银行流水", "银行卡", "银行账户", "官方余额表",
 	"财务口径", "项目口径", "合同口径", "项目成本口径",
 	"实际到账", "实际支出", "应收账款", "应付账款",
@@ -33,6 +33,18 @@ var relativeFinancePeriodTerms = []string{
 	"上一个完整月", "上个完整月", "最近完整月份", "最新完整月份",
 	"最近月份", "最新月份", "上个月", "上月",
 	"至今", "到现在", "现在", "当前", "目前",
+}
+
+var financeRetryOrContinuationTerms = []string{
+	"继续", "接着", "再算一次", "重新算", "重算", "再查一次", "重新查",
+}
+
+var projectRosterMetricTerms = []string{
+	"应付", "应收", "未付款", "未回款",
+}
+
+var projectRosterScopeTerms = []string{
+	"哪些", "有哪些", "都有哪些", "列出", "列表", "明细", "每个", "各",
 }
 
 var (
@@ -159,11 +171,32 @@ func looksLikeFinanceQueryText(text string) bool {
 }
 
 func shouldPreferRawFinanceSemantics(rawUser, rewritten string) bool {
-	return missingProtectedFinanceTerms(rawUser, rewritten) ||
+	return isFinanceRetryOrContinuation(rewritten) ||
+		isCompanyProjectRosterQuery(rawUser) ||
+		missingProtectedFinanceTerms(rawUser, rewritten) ||
 		lostSpecificFinanceSubject(rawUser, rewritten) ||
 		addedAbsoluteFinanceMonthToRelativePeriod(rawUser, rewritten) ||
 		lostRelativeFinancePeriod(rawUser, rewritten) ||
 		lostAbsoluteFinanceMonth(rawUser, rewritten)
+}
+
+func isFinanceRetryOrContinuation(text string) bool {
+	if looksLikeFinanceQueryText(text) {
+		return false
+	}
+	normalized := strings.Trim(strings.TrimSpace(text), "，,。.！!？?；;：:")
+	for _, term := range financeRetryOrContinuationTerms {
+		if normalized == term {
+			return true
+		}
+	}
+	return false
+}
+
+func isCompanyProjectRosterQuery(text string) bool {
+	return strings.Contains(text, "项目") &&
+		containsAnyText(text, projectRosterMetricTerms) &&
+		containsAnyText(text, projectRosterScopeTerms)
 }
 
 func missingProtectedFinanceTerms(rawUser, rewritten string) bool {
@@ -265,6 +298,16 @@ func mergeProtectedFinanceQuery(rawUser, rewritten string) string {
 	hint := strings.TrimSpace(rewritten)
 	if rawText == "" || hint == "" || rawText == hint {
 		return rawText
+	}
+	if isFinanceRetryOrContinuation(hint) {
+		return rawText
+	}
+	if isCompanyProjectRosterQuery(rawText) {
+		subjects := specificFinanceSubjectCandidates(hint)
+		if len(subjects) == 0 {
+			return rawText
+		}
+		hint = strings.Join(subjects, " ")
 	}
 	if containsAnyText(rawText, relativeFinancePeriodTerms) || len(absoluteFinanceMonthKeys(rawText)) > 0 {
 		hint = stripFinancePeriodPhrases(hint)
