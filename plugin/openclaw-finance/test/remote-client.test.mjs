@@ -591,6 +591,44 @@ test("finance prompt hook extracts original question from patrol wrapper without
   });
 });
 
+test("finance-query can recover the captured patrol raw question when execute lacks scope", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const staleBankQuestion = "银行卡上，上个完整自然月净现金流是多少？";
+    const staleRevenueQuestion = "收入表中最新月份项目结算营收是多少？";
+    const currentQuestion = "银行卡上看，上个完整月的净现金流是多少？";
+    const patrolPrompt = [
+      "[巡检要求]",
+      "这是一条只读巡检请求。回答前必须先调用 `finance-query` 获取最新事实。",
+      "",
+      "[用户原问题]",
+      currentQuestion
+    ].join("\n");
+
+    await hooks.get("before_prompt_build")({
+      prompt: staleBankQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: staleBankQuestion }] }]
+    }, { sessionKey: "stale-bank-session" });
+    await hooks.get("before_prompt_build")({
+      prompt: staleRevenueQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: staleRevenueQuestion }] }]
+    }, { sessionKey: "stale-revenue-session" });
+    await hooks.get("before_prompt_build")({
+      prompt: patrolPrompt,
+      messages: [{ role: "user", content: [{ type: "text", text: patrolPrompt }] }]
+    }, { sessionKey: "current-patrol-session" });
+
+    await tools.get("finance-query").execute("call-current-patrol-query", {
+      query: "2026年6月银行卡净现金流",
+      raw_user_query: currentQuestion
+    });
+
+    const args = toolCalls.at(-1).arguments;
+    assert.equal(args.query, "2026年6月银行卡净现金流");
+    assert.equal(args.raw_user_query, currentQuestion);
+  });
+});
+
 test("finance prompt hook prefers current prompt over stale session history", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {

@@ -1004,7 +1004,7 @@ function setLatestFinanceQuestionForToolScope(event, ctx, latestQuestion) {
   }
 }
 
-function takeLatestFinanceQuestionForTool(ctx) {
+function takeLatestFinanceQuestionForTool(ctx, modelRawQuestion = "") {
   const scope = financeScope(undefined, ctx);
   if (scope.runKey) {
     if (!latestFinanceQuestionBySession.has(scope.runKey)) return "";
@@ -1029,6 +1029,15 @@ function takeLatestFinanceQuestionForTool(ctx) {
     return question;
   }
   const pending = [...latestFinanceQuestionBySession.entries()];
+  const modelRaw = financeQuestionText(modelRawQuestion);
+  if (modelRaw) {
+    const matches = pending.filter(([, question]) => question === modelRaw);
+    if (matches.length === 1) {
+      const [key, question] = matches[0];
+      latestFinanceQuestionBySession.delete(key);
+      return question || "";
+    }
+  }
   if (pending.length !== 1 || !pending[0][0].startsWith("session:")) return "";
   const [key, question] = pending[0];
   latestFinanceQuestionBySession.delete(key);
@@ -1762,10 +1771,11 @@ function createFinanceTool(name, description, parameters, toolCtx) {
     parameters,
     async execute(_toolCallId, rawParams, runtimeCtx) {
       const executionCtx = financeExecutionContext(toolCtx, runtimeCtx);
-      const protectedQuestion = name === "finance-query" ? takeLatestFinanceQuestionForTool(executionCtx) : "";
       const rawParamsObject = isRecord(rawParams) ? rawParams : {};
       const { raw_user_query: _discardModelRawQuery, ...forwardedParams } = rawParamsObject;
       const modelQuery = name === "finance-query" ? financeQuestionText(rawParamsObject.query || "") : "";
+      const modelRawQuestion = name === "finance-query" ? financeQuestionText(rawParamsObject.raw_user_query || "") : "";
+      const protectedQuestion = name === "finance-query" ? takeLatestFinanceQuestionForTool(executionCtx, modelRawQuestion) : "";
       const params = name === "finance-query"
         ? (modelQuery
           ? {
