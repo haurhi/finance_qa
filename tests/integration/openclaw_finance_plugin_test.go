@@ -363,9 +363,10 @@ const capturedCalls = (await import("node:fs")).readFileSync(process.env.FINANCE
   .split("\n")
   .filter(Boolean)
   .map((line) => JSON.parse(line));
-const lastCapturedQuery = capturedCalls.at(-1)?.query;
-if (lastCapturedQuery !== "账上2026年3月应收和应付分别还挂着多少？哪头更重？") {
-  console.error("finance-query should preserve latest raw user wording over model-rewritten query:", JSON.stringify({ lastCapturedQuery, capturedCalls }));
+const lastCapturedCall = capturedCalls.at(-1);
+if (lastCapturedCall?.query !== "2026年3月应收和应付分别还挂着多少？哪头更重？" ||
+    lastCapturedCall?.raw_user_query !== "账上2026年3月应收和应付分别还挂着多少？哪头更重？") {
+  console.error("finance-query should transport rewritten and raw user wording separately:", JSON.stringify({ lastCapturedCall, capturedCalls }));
   process.exit(1);
 }
 await tool.execute("second-call-without-new-prompt", { query: "2026年4月收入多少？" });
@@ -374,9 +375,9 @@ const afterConsumeCalls = (await import("node:fs")).readFileSync(process.env.FIN
   .split("\n")
   .filter(Boolean)
   .map((line) => JSON.parse(line));
-const queryAfterConsume = afterConsumeCalls.at(-1)?.query;
-if (queryAfterConsume !== "2026年4月收入多少？") {
-  console.error("raw finance wording override should be consumed after one finance-query call:", JSON.stringify({ queryAfterConsume, afterConsumeCalls }));
+const callAfterConsume = afterConsumeCalls.at(-1);
+if (callAfterConsume?.query !== "2026年4月收入多少？" || Object.hasOwn(callAfterConsume, "raw_user_query")) {
+  console.error("raw finance wording should be consumed after one finance-query call:", JSON.stringify({ callAfterConsume, afterConsumeCalls }));
   process.exit(1);
 }
 await promptHook({ prompt: "今天天气怎么样？", messages: [] });
@@ -386,9 +387,9 @@ const afterClearCalls = (await import("node:fs")).readFileSync(process.env.FINAN
   .split("\n")
   .filter(Boolean)
   .map((line) => JSON.parse(line));
-const queryAfterNonFinanceTurn = afterClearCalls.at(-1)?.query;
-if (queryAfterNonFinanceTurn !== "2026年4月收入多少？") {
-  console.error("non-finance prompt should clear captured raw finance wording:", JSON.stringify({ queryAfterNonFinanceTurn, afterClearCalls }));
+const callAfterNonFinanceTurn = afterClearCalls.at(-1);
+if (callAfterNonFinanceTurn?.query !== "2026年4月收入多少？" || Object.hasOwn(callAfterNonFinanceTurn, "raw_user_query")) {
+  console.error("non-finance prompt should clear captured raw finance wording:", JSON.stringify({ callAfterNonFinanceTurn, afterClearCalls }));
   process.exit(1);
 }
 if (!directHookResult?.prependSystemContext?.includes("行业商品数据采购合同-A01") ||
