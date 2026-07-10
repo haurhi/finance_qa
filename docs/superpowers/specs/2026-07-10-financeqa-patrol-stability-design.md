@@ -50,6 +50,8 @@ FinanceQA 2.2.57 在 `lzh` 部署后的 17 轮巡检中累计通过 220/238，ru
 - 公司级项目 roster：原问题表达“哪些/都有哪些/列出/明细/各”等复数范围，同时包含项目和应收/应付/未付款等指标时，原问题决定公司级 aggregate 语义。改写只能补充真实主体，不能把结构词变成 entity。
 - 明确业务表口径：`收入表` 与现有 `账上/余额表/序时账/银行流水` 一样属于受保护来源词；改写不能删除它或换成另一数据源。
 
+另外补齐 continuation 边界：当原问题是完整财务问题，而模型 query 只是“继续/再算一次/重新查”等无独立财务语义的重试或延续语时，直接使用原问题。该规则只处理 rewritten 本身不能独立回答的情况，不影响带有真实实体补全的改写。
+
 合并时仅保留能在原问题中找到依据、或符合现有具体合同/实体候选规则的主体提示。没有新增有效信息的改写直接丢弃，避免把整句以“补充识别”附加后再次触发实体抽取。
 
 ### 3. 公司级问法不接受未落地伪实体
@@ -58,7 +60,7 @@ FinanceQA 2.2.57 在 `lzh` 部署后的 17 轮巡检中累计通过 220/238，ru
 
 守卫依据原问题的语义范围和文本落地性，不维护针对巡检句子的黑名单。`包括`、`期间`、`各`等结构片段会因为不是可落地业务主体而自然被拒绝；真实简称或合同名仍可通过现有 resolver 补全。即使数据库模糊匹配出一个真实存在但用户原问题未提及的主体，也不得把公司级问法改成实体级路由。
 
-### 4. 账银对账总是产出完整三项 facts
+### 4. 账银对账总是产出完整三项 facts，但按问法决定 headline
 
 只要 query family 已确定为 reconciliation，就统一计算：
 
@@ -66,7 +68,12 @@ FinanceQA 2.2.57 在 `lzh` 部署后的 17 轮巡检中累计通过 220/238，ru
 - 账上净利润；
 - 名义差额 = 账上净利润 - 银行净流入。
 
-`queryReconciliation` 不再依赖“差多少/差异”等词才调用 `annotateReconciliationNominalDifference`。这样“对比/比较/差了多少/差异是多少”共享同一条业务路径，不再维护不完整的触发词清单。输出同时保留“两个口径不同、名义差额只作对账入口”的提示。
+将当前 `annotateReconciliationNominalDifference` 拆成两个职责：
+
+- facts 注解总是执行，负责 `cash_profit_reconciliation`、三项 metrics 和 required atoms；
+- headline/message 提升只在用户明确要求定量比较时执行，包括“对比/比较/差多少/差了多少/相差/差额/差异”等表达。
+
+这样普通比较问法都能得到完整三项事实；“为什么利润和到账差这么多/怎么回事”等解释型问法也带完整结构化 facts，但保留现有解释叙事和输出重心，不强制把 headline 改成名义差额。所有路径都保留“两个口径不同、名义差额只作对账入口”的事实提示。
 
 ### 5. 多指标结果显式声明 required facts
 
@@ -83,6 +90,10 @@ FinanceQA 2.2.57 在 `lzh` 部署后的 17 轮巡检中累计通过 220/238，ru
 
 OpenClaw 继续优先消费 `finance_facts.required_atoms`。当模型回答缺失或冲突时，只追加/替换这些原子；不读取或复制完整 `final_answer`。现有否定冲突、金额冲突、session/run 隔离逻辑保持不变。
 
+### 7. 插件源码形态
+
+`plugin/openclaw-finance/dist/index.esm.js` 在当前仓库中就是被部署和测试的维护源文件；`package.json` 没有独立 build script，`index.ts` 仅做 re-export。本次直接修改并测试 dist，不新增构建链。
+
 ## 测试设计
 
 所有生产代码修改前先写红测并确认按预期失败。
@@ -93,6 +104,7 @@ OpenClaw 继续优先消费 `finance_facts.required_atoms`。当模型回答缺�
 - tool factory context 含 run/session 标识而 runtime context 只含部分字段时，execute 仍取得同一 run 的原问题；两个并发 run 反序调用时不串题。
 - 原问题为未付款项目 roster，改写加入“包括项目名称和对应金额”时，有效 query 保持公司级 roster 语义。
 - 原问题明确“收入表最新月份”，改写不得丢掉收入表口径。
+- 原问题是完整财务题、模型 query 只有“继续/再算一次/重新查”时，有效 query 回退原问题；真正带实体补全的改写仍保留。
 - 真实客户简称/合同名补全仍保留，证明没有退化为全量 raw 替换。
 - 插件传给 MCP 的模型 `query` 保持原样，保护性合并只在 Go 测试中验证一次。
 
@@ -103,6 +115,7 @@ OpenClaw 继续优先消费 `finance_facts.required_atoms`。当模型回答缺�
 - 公司级问法即使模糊匹配到数据库中真实但原问题未提及的主体，也仍保持公司级路由。
 - 官方 AR/AP 多指标 facts 包含四个关键金额原子。
 - 普通 comparison、`比较`、`差了多少`、`差异是多少` 均返回同一个 `cash_profit_reconciliation` 和三个 required atoms。
+- 解释型 reconciliation 也包含三项 facts，但保持原有解释型 headline/message；把当前已通过的解释型与范围型 reconciliation case 纳入 A/B 回归。
 - 单独问银行净流入或账上净利润不进入 reconciliation。
 
 ### OpenClaw bridge
@@ -117,7 +130,7 @@ OpenClaw 继续优先消费 `finance_facts.required_atoms`。当模型回答缺�
 2. `go test ./internal/mcp ./internal/query -count=1`。
 3. `node --test plugin/openclaw-finance/test/*.test.mjs`。
 4. `go test ./internal/... ./tests/integration ./tests/unit/... -count=1`，再跑仓库规定的 business/full 流程。
-5. 用最新失败原题和对应改写文本做本地/`lzh` 只读 A/B replay。
+5. 用最新失败原题、对应改写文本，以及当前已通过的解释型/范围型 reconciliation case 做本地/`lzh` 只读 A/B replay。
 6. 全量同步前执行版本 preflight；部署后验证二进制、插件和两个服务的实际运行态。
 7. OpenClaw 真链路逐 case 重放至少 5 次，最后以新的完整 hourly patrol 的 `scores.json` 为最终验收证据。
 
