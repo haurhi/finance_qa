@@ -35,7 +35,9 @@ FinanceQA 2.2.57 在 `lzh` 部署后的 17 轮巡检中累计通过 220/238，ru
 
 `plugin/openclaw-finance/dist/index.esm.js` 的 `finance-query` execute hook 应把当前 run/session 已解析出的最新财务用户原问题写入 `raw_user_query`，而不是只在模型未提供该字段时补充。模型生成的 `query` 保持不变，用于实体补全和简化表达。
 
-该状态必须按 run 隔离并在工具调用后按现有生命周期清理，避免复用 session key 时串入上一题。现有 session/run guard 继续复用，不新增第二套状态表。
+该状态必须按 run 隔离并在工具调用后按现有生命周期清理，避免复用 session key 时串入上一题。execute 计算 scope 时合并 tool factory context 与 runtime context，不能因为 runtime context 只带部分字段就丢掉 factory context 中的 `runId/sessionKey`。现有 session/run guard 继续复用，不新增第二套状态表；scope 无法唯一对应当前问题时 fail closed，不借用其他 active run 的问题。
+
+插件侧不再同时改写 `query`。它只负责准确传递“模型 query + 当前用户 raw_user_query”，所有语义取舍集中到 Go MCP，删除 JS/Go 两套近似合并规则造成的漂移。
 
 结果数据流为：
 
@@ -43,7 +45,7 @@ FinanceQA 2.2.57 在 `lzh` 部署后的 17 轮巡检中累计通过 220/238，ru
 
 ### 2. MCP 的保护性语义合并
 
-`internal/mcp/service.go` 的 `effectiveFinanceQuery` 保留现有动态期间、明确来源和具体主体保护，并增加两种通用保护：
+`internal/mcp/service.go` 的 `effectiveFinanceQuery` 是唯一的语义合并位置。它保留现有动态期间、明确来源和具体主体保护，并增加两种通用保护：
 
 - 公司级项目 roster：原问题表达“哪些/都有哪些/列出/明细/各”等复数范围，同时包含项目和应收/应付/未付款等指标时，原问题决定公司级 aggregate 语义。改写只能补充真实主体，不能把结构词变成 entity。
 - 明确业务表口径：`收入表` 与现有 `账上/余额表/序时账/银行流水` 一样属于受保护来源词；改写不能删除它或换成另一数据源。
@@ -54,7 +56,7 @@ FinanceQA 2.2.57 在 `lzh` 部署后的 17 轮巡检中累计通过 220/238，ru
 
 在 query entity resolution 的单一权威位置复用一个“主体是否由问题文本支持”的判断。仅当问题已经被识别为公司级 roster、官方 AR/AP 或最新公司汇总时启用该守卫；明确客户、供应商、合同、项目问法仍允许正常实体解析。
 
-守卫依据语义范围和文本落地性，不维护针对巡检句子的黑名单。`包括`、`期间`、`各`等结构片段会因为不是可落地业务主体而自然被拒绝；真实简称或合同名仍可通过现有 resolver 补全。
+守卫依据原问题的语义范围和文本落地性，不维护针对巡检句子的黑名单。`包括`、`期间`、`各`等结构片段会因为不是可落地业务主体而自然被拒绝；真实简称或合同名仍可通过现有 resolver 补全。即使数据库模糊匹配出一个真实存在但用户原问题未提及的主体，也不得把公司级问法改成实体级路由。
 
 ### 4. 账银对账总是产出完整三项 facts
 
@@ -88,14 +90,17 @@ OpenClaw 继续优先消费 `finance_facts.required_atoms`。当模型回答缺�
 ### Go MCP
 
 - 当前用户原问题含“从账上看”，模型 query/raw 参数丢失该词时，execute 后传给 Go MCP 的 `raw_user_query` 仍保留原词（插件测试）。
+- tool factory context 含 run/session 标识而 runtime context 只含部分字段时，execute 仍取得同一 run 的原问题；两个并发 run 反序调用时不串题。
 - 原问题为未付款项目 roster，改写加入“包括项目名称和对应金额”时，有效 query 保持公司级 roster 语义。
 - 原问题明确“收入表最新月份”，改写不得丢掉收入表口径。
 - 真实客户简称/合同名补全仍保留，证明没有退化为全量 raw 替换。
+- 插件传给 MCP 的模型 `query` 保持原样，保护性合并只在 Go 测试中验证一次。
 
 ### Query router
 
 - “2025年到2026年未付款的项目明细，包括项目名称和对应金额”以及同义 variants 均得到空 entity、`needs_contract_dimension=false`、`prefer_contract_aggregate=true`、正确数据覆盖期。
 - 明确客户/供应商/合同项目问法仍进入 entity/contract dimension 路径。
+- 公司级问法即使模糊匹配到数据库中真实但原问题未提及的主体，也仍保持公司级路由。
 - 官方 AR/AP 多指标 facts 包含四个关键金额原子。
 - 普通 comparison、`比较`、`差了多少`、`差异是多少` 均返回同一个 `cash_profit_reconciliation` 和三个 required atoms。
 - 单独问银行净流入或账上净利润不进入 reconciliation。
