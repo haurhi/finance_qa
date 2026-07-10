@@ -245,6 +245,7 @@ func TestReconciliationAlwaysPublishesThreeFacts(t *testing.T) {
 		{name: "compare", query: "对比一下最近完整月份账上利润和银行流水净流入。", promote: true},
 		{name: "compare synonym", query: "比较最近完整月份账上利润和银行流水净流入。", promote: true},
 		{name: "difference amount", query: "最近完整月份账上利润和银行流水净流入差了多少？", promote: true},
+		{name: "explanation with explicit amount", query: "为什么最近完整月份账上利润和银行净流入不一样？差异是多少？", promote: true},
 		{name: "explanation", query: "为什么最近完整月份账上利润和银行净流入差这么多？", promote: false},
 	}
 

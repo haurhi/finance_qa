@@ -65,6 +65,9 @@ func shouldAppendReconciliationHighlights(cash *accounting.CashPerspective, brid
 }
 
 func shouldPromoteNominalReconciliationDifference(question string) bool {
+	if containsAny(question, []string{"差多少", "差了多少", "差异是多少", "差额是多少"}) {
+		return true
+	}
 	if containsAny(question, []string{"为什么", "怎么回事"}) {
 		return false
 	}
