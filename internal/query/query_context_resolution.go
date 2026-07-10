@@ -27,8 +27,16 @@ func buildIntentTraceMap(intentTrace IntentTrace) map[string]any {
 }
 
 func (e *Engine) normalizeQuestionAndResolveCompany(question string) string {
+	return e.normalizeQuestionAndResolveCompanyWithUserQuestion(question, question)
+}
+
+func (e *Engine) normalizeQuestionAndResolveCompanyWithUserQuestion(question, userQuestion string) string {
 	q := NormalizeQuestion(question)
-	resolved := ResolveCompanyMention(q, e.available)
+	groundingQuestion := NormalizeQuestion(userQuestion)
+	if groundingQuestion == "" {
+		groundingQuestion = q
+	}
+	resolved := ResolveCompanyMention(groundingQuestion, e.available)
 	if resolved != "" && resolved != e.Company {
 		e.Company = resolved
 	}
@@ -51,23 +59,30 @@ func (e *Engine) resolveQueryEntity(q string, spec QuerySpec) string {
 }
 
 func shouldKeepEntityForQuestionScope(question, entity string, cfg RuleConfig) bool {
-	officialCompanyARAP := shouldTreatAsCompanyOfficialARAPQuestion(question, "")
-	companyScope := looksLikeCompanyScopeProjectAggregateQuestion(question) ||
-		shouldUseLatestRevenueContractAggregate(question, cfg) ||
+	return shouldKeepEntityForQuestionScopeWithUserQuestion(question, question, entity, cfg)
+}
+
+func shouldKeepEntityForQuestionScopeWithUserQuestion(question, userQuestion, entity string, cfg RuleConfig) bool {
+	groundingQuestion := NormalizeQuestion(userQuestion)
+	if groundingQuestion == "" {
+		groundingQuestion = question
+	}
+	officialCompanyARAP := shouldTreatAsCompanyOfficialARAPQuestion(groundingQuestion, "")
+	companyScope := looksLikeCompanyScopeProjectAggregateQuestion(groundingQuestion) ||
+		shouldUseLatestRevenueContractAggregate(groundingQuestion, cfg) ||
 		officialCompanyARAP
 	if !companyScope {
 		return true
 	}
-	groundingQuestion := question
 	if officialCompanyARAP {
 		groundingQuestion = stripBalanceSheetAccountTerms(groundingQuestion)
 	}
 	return entityAppearsInQuestionText(groundingQuestion, entity)
 }
 
-func (e *Engine) applyQueryPriorityAdjustments(q string, intent Intent, spec QuerySpec, entity string, hasRealEntity bool, anchor time.Time) (QuerySpec, string, bool, time.Time) {
+func (e *Engine) applyQueryPriorityAdjustments(q, userQuestion string, intent Intent, spec QuerySpec, entity string, hasRealEntity bool, anchor time.Time) (QuerySpec, string, bool, time.Time) {
 	cfg := e.currentRuleConfig()
-	if !shouldKeepEntityForQuestionScope(q, entity, cfg) {
+	if !shouldKeepEntityForQuestionScopeWithUserQuestion(q, userQuestion, entity, cfg) {
 		entity = ""
 		spec.Entity = ""
 		spec.BossRewrite.Entity = ""
@@ -121,7 +136,15 @@ func normalizeExplicitCashCompanyRoute(q string, spec QuerySpec, entity string, 
 }
 
 func (e *Engine) resolveQueryRouting(question string) resolvedQueryRouting {
-	q := e.normalizeQuestionAndResolveCompany(question)
+	return e.resolveQueryRoutingWithUserQuestion(question, question)
+}
+
+func (e *Engine) resolveQueryRoutingWithUserQuestion(question, userQuestion string) resolvedQueryRouting {
+	q := e.normalizeQuestionAndResolveCompanyWithUserQuestion(question, userQuestion)
+	groundingQuestion := NormalizeQuestion(userQuestion)
+	if groundingQuestion == "" {
+		groundingQuestion = q
+	}
 	cfg := e.currentRuleConfig()
 	anchor := e.getLatestPeriodAnchor()
 	periodAnchor := e.periodParserAnchorForQuestion(q, anchor)
@@ -134,7 +157,7 @@ func (e *Engine) resolveQueryRouting(question string) resolvedQueryRouting {
 	entity = spec.Entity
 	hasRealEntity := e.isRealBusinessEntity(q, entity)
 	spec, entity, hasRealEntity = normalizeExplicitCashCompanyRoute(q, spec, entity, hasRealEntity, cfg)
-	spec, entity, hasRealEntity, periodAnchor = e.applyQueryPriorityAdjustments(q, intent, spec, entity, hasRealEntity, periodAnchor)
+	spec, entity, hasRealEntity, periodAnchor = e.applyQueryPriorityAdjustments(q, groundingQuestion, intent, spec, entity, hasRealEntity, periodAnchor)
 	spec, _ = e.decideBossRoute(context.Background(), spec)
 	entity = spec.Entity
 	hasRealEntity = e.isRealBusinessEntity(q, entity)

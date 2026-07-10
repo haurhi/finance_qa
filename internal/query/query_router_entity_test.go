@@ -49,3 +49,15 @@ func TestExtractNamedEntityRejectsLooseYearRangeProjectRosterQuestion(t *testing
 		t.Fatalf("extractNamedEntityFromQuestion() = %q, want empty company-scope entity", got)
 	}
 }
+
+func TestEntityAppearsInQuestionTextSupportsCoordinatedShortAliases(t *testing.T) {
+	question := "百度和阿里2025年Q4未付款项目明细"
+	for _, entity := range []string{
+		"百度在线网络技术(北京)有限公司",
+		"阿里云计算有限公司",
+	} {
+		if !entityAppearsInQuestionText(question, entity) {
+			t.Fatalf("entityAppearsInQuestionText(%q, %q) = false, want true", question, entity)
+		}
+	}
+}

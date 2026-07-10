@@ -455,7 +455,11 @@ func TestProjectCostUnpaidQuestionUsesProjectPayableBeforeInvoiceGap(t *testing.
 
 func TestProjectPayableRangeToLastCompleteNaturalMonthKeepsRequestedPeriod(t *testing.T) {
 	dbPath := buildContractARAPPriorityDB(t)
-	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.June, 28, 0, 0, 0, 0, time.UTC)))
+	engine, err := NewEngine(
+		dbPath,
+		"测试公司",
+		WithAsOfAnchor(time.Date(2026, time.June, 28, 0, 0, 0, 0, time.UTC)),
+	)
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}
@@ -1900,6 +1904,183 @@ func TestOfficialARAPUngroundedNamedCandidateKeepsCompanyRoute(t *testing.T) {
 	}
 	if got := res.Data["payable_side_total"]; got != float64(10665) {
 		t.Fatalf("payable_side_total = %v, want 10665", got)
+	}
+}
+
+func TestRewriteOnlyEntitiesDoNotHijackCompanyScopeRoutes(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.June, 28, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	for _, tt := range []struct {
+		name          string
+		question      string
+		userQuestion  string
+		wantFamily    QueryFamily
+		wantEntity    string
+		wantDimension bool
+	}{
+		{
+			name:         "latest revenue",
+			question:     "测试客户 收入表最新月份营收数据",
+			userQuestion: "收入表最新月份营收数据",
+			wantFamily:   QueryFamilyCoreMetric,
+		},
+		{
+			name:         "project roster",
+			question:     "南京林悦智能科技有限公司 2025年到2026年未付款的项目明细",
+			userQuestion: "25年到26年未付款的项目都有哪些，对应的金额是多少？",
+			wantFamily:   QueryFamilyCoreMetric,
+		},
+		{
+			name:         "official arap",
+			question:     "南京林悦智能科技有限公司 从官方余额表看，2026年3月应收账款、应付账款和其他应付款分别有多少？",
+			userQuestion: "从官方余额表看，2026年3月应收账款、应付账款和其他应付款分别有多少？",
+			wantFamily:   QueryFamilyARAP,
+		},
+		{
+			name:          "explicit customer control",
+			question:      "测试客户最新月份营收数据",
+			userQuestion:  "测试客户最新月份营收数据",
+			wantFamily:    QueryFamilyContractDimension,
+			wantEntity:    "测试客户",
+			wantDimension: true,
+		},
+		{
+			name:          "explicit payable alias control",
+			question:      "测试租赁供应商项目应付未付还有多少",
+			userQuestion:  "租赁供应商未付款的项目还有多少？",
+			wantFamily:    QueryFamilyContractDimension,
+			wantEntity:    "测试租赁供应商",
+			wantDimension: true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.wantEntity != "" && !entityAppearsInQuestionText(tt.userQuestion, tt.wantEntity) {
+				t.Fatalf("fixture entity %q is not grounded by %q (mention=%q)", tt.wantEntity, tt.userQuestion, extractNamedEntityFromQuestion(tt.userQuestion))
+			}
+			route := engine.resolveQueryRoutingWithUserQuestion(tt.question, tt.userQuestion)
+			if route.entity != tt.wantEntity || route.spec.Entity != tt.wantEntity {
+				t.Errorf("entity=%q spec.entity=%q, want %q; spec=%+v", route.entity, route.spec.Entity, tt.wantEntity, route.spec)
+			}
+			if route.spec.QueryFamily != tt.wantFamily || route.spec.NeedsContractDimension != tt.wantDimension {
+				t.Errorf("route family=%s needs_dimension=%t, want family=%s needs_dimension=%t; spec=%+v", route.spec.QueryFamily, route.spec.NeedsContractDimension, tt.wantFamily, tt.wantDimension, route.spec)
+			}
+		})
+	}
+}
+
+func TestQueryWithUserQuestionRewriteOnlyEntityDoesNotHijackCompanyProjectRoster(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.June, 28, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.QueryWithUserQuestion(
+		"测试客户项目-A01 2025年Q4和2026年Q1未付款项目明细",
+		"2025年Q4和2026年Q1未付款的项目都有哪些，对应金额是多少？",
+	)
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["query_pipeline"]; got == "compound_source_query" {
+		t.Fatalf("query_pipeline = %v, want company-scope project roster; data=%+v", got, res.Data)
+	}
+	spec, ok := res.Data["query_spec"].(map[string]any)
+	if !ok {
+		t.Fatalf("query_spec missing: %+v", res.Data)
+	}
+	if got := spec["entity"]; got != "" {
+		t.Fatalf("query_spec.entity = %v, want empty company-scope entity; spec=%+v", got, spec)
+	}
+	if got := spec["query_family"]; got != QueryFamilyCoreMetric {
+		t.Fatalf("query_family = %v, want %v; spec=%+v", got, QueryFamilyCoreMetric, spec)
+	}
+	if got := spec["needs_contract_dimension"]; got != false {
+		t.Fatalf("needs_contract_dimension = %v, want false company-scope route; spec=%+v", got, spec)
+	}
+	if got := res.Data["entity"]; got != nil && got != "" {
+		t.Fatalf("result entity = %v, want empty company-scope entity; data=%+v", got, res.Data)
+	}
+}
+
+func TestQueryWithUserQuestionExplicitEntityStillUsesCompoundSourceQuery(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.June, 28, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.QueryWithUserQuestion(
+		"测试租赁供应商项目 2025年Q4和2026年Q1未付款项目明细",
+		"租赁供应商2025年Q4和2026年Q1未付款项目明细",
+	)
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["query_pipeline"]; got != "compound_source_query" {
+		t.Fatalf("query_pipeline = %v, want compound_source_query; data=%+v", got, res.Data)
+	}
+	spec, ok := res.Data["query_spec"].(map[string]any)
+	if !ok {
+		t.Fatalf("query_spec missing: %+v", res.Data)
+	}
+	if got := spec["entity"]; got != "测试租赁供应商" {
+		t.Fatalf("query_spec.entity = %v, want canonical explicit entity 测试租赁供应商; spec=%+v", got, spec)
+	}
+}
+
+func TestQueryWithUserQuestionMultipleExplicitEntitiesKeepCompoundSourceQuery(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.June, 28, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.QueryWithUserQuestion(
+		"测试客户和测试租赁供应商 2025年Q4未付款项目明细",
+		"测试客户和租赁供应商2025年Q4未付款项目明细",
+	)
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["query_pipeline"]; got != "compound_source_query" {
+		t.Fatalf("query_pipeline = %v, want compound_source_query; data=%+v", got, res.Data)
+	}
+	entities, ok := res.Data["entities"].([]string)
+	if !ok || len(entities) != 2 || entities[0] != "测试客户" || entities[1] != "测试租赁供应商" {
+		t.Fatalf("entities = %#v, want both canonical explicit entities", res.Data["entities"])
+	}
+}
+
+func TestQueryWithUserQuestionRewriteOnlyCompoundEntityIsFiltered(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.June, 28, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	res := engine.QueryWithUserQuestion(
+		"测试客户和测试租赁供应商 2025年Q4和2026年Q1未付款项目明细",
+		"测试客户2025年Q4和2026年Q1未付款项目明细",
+	)
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["query_pipeline"]; got != "compound_source_query" {
+		t.Fatalf("query_pipeline = %v, want compound_source_query; data=%+v", got, res.Data)
+	}
+	entities, ok := res.Data["entities"].([]string)
+	if !ok || len(entities) != 1 || entities[0] != "测试客户" {
+		t.Fatalf("entities = %#v, want only raw-grounded entity 测试客户", res.Data["entities"])
 	}
 }
 

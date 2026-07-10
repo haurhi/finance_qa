@@ -122,7 +122,7 @@ func (s *Service) runFinanceQuery(ctx context.Context, args map[string]any) (Too
 	}
 	defer engine.Close()
 
-	return ToolRunResult{Operation: "query", Payload: engine.Query(queryStr)}, nil
+	return ToolRunResult{Operation: "query", Payload: engine.QueryWithUserQuestion(queryStr, rawUserQuery)}, nil
 }
 
 func effectiveFinanceQuery(rewritten, rawUser string) string {

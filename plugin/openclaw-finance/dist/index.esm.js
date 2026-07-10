@@ -448,7 +448,6 @@ function parseSsePayload(rawBody) {
 let mcpClient = null;
 let mcpClientKey = "";
 let pluginRuntime = null;
-let latestFinanceQuestionForTool = "";
 const latestFinanceQuestionBySession = new Map();
 const pendingFinanceFactAtomsBySession = new Map();
 const pendingFinanceFactPayloadsBySession = new Map();
@@ -1003,7 +1002,6 @@ function setLatestFinanceQuestionForToolScope(event, ctx, latestQuestion) {
     latestFinanceQuestionBySession.delete(scope.primaryKey);
     if (scope.runKey) unregisterFinanceRunForSession(scope);
   }
-  latestFinanceQuestionForTool = scope.runKey ? "" : question;
 }
 
 function takeLatestFinanceQuestionForTool(ctx) {
@@ -1012,7 +1010,6 @@ function takeLatestFinanceQuestionForTool(ctx) {
     if (!latestFinanceQuestionBySession.has(scope.runKey)) return "";
     const question = latestFinanceQuestionBySession.get(scope.runKey) || "";
     latestFinanceQuestionBySession.delete(scope.runKey);
-    if (latestFinanceQuestionForTool === question) latestFinanceQuestionForTool = "";
     return question;
   }
   const runKeys = activeFinanceRunKeysForSession(scope);
@@ -1029,12 +1026,13 @@ function takeLatestFinanceQuestionForTool(ctx) {
   if (latestFinanceQuestionBySession.has(scope.sessionStateKey)) {
     const question = latestFinanceQuestionBySession.get(scope.sessionStateKey) || "";
     latestFinanceQuestionBySession.delete(scope.sessionStateKey);
-    if (latestFinanceQuestionForTool === question) latestFinanceQuestionForTool = "";
     return question;
   }
-  const fallback = latestFinanceQuestionForTool;
-  latestFinanceQuestionForTool = "";
-  return fallback;
+  const pending = [...latestFinanceQuestionBySession.entries()];
+  if (pending.length !== 1 || !pending[0][0].startsWith("session:")) return "";
+  const [key, question] = pending[0];
+  latestFinanceQuestionBySession.delete(key);
+  return question || "";
 }
 
 function amountAtomValue(atom) {

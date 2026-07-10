@@ -308,6 +308,32 @@ test("finance-query fails closed when one session has multiple ambiguous active 
   });
 });
 
+test("finance-query unscoped execute fails closed across multiple session-only prompts", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const bankQuestion = "银行卡上，上个完整自然月净现金流是多少？";
+    const revenueQuestion = "收入表中最新月份项目结算营收是多少？";
+
+    await hooks.get("before_prompt_build")({
+      prompt: bankQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: bankQuestion }] }]
+    }, { sessionKey: "session-only-bank" });
+    await hooks.get("before_prompt_build")({
+      prompt: revenueQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: revenueQuestion }] }]
+    }, { sessionKey: "session-only-revenue" });
+
+    await tools.get("finance-query").execute("unscoped-session-only-call", {
+      query: "2026年6月净现金流",
+      raw_user_query: "模型自带的错误原问题"
+    });
+
+    const args = toolCalls.at(-1).arguments;
+    assert.equal(args.query, "2026年6月净现金流");
+    assert.equal(Object.hasOwn(args, "raw_user_query"), false);
+  });
+});
+
 test("finance-query does not borrow the remaining raw question after another active run consumes its own", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {

@@ -11,6 +11,13 @@ func extractNamedEntityFromQuestion(question string) string {
 		return ""
 	}
 	candidate := q
+	for _, token := range []string{
+		"未付款", "已付款", "未支付", "已支付",
+		"未回款", "已回款", "未收款", "已收款",
+		"未开票", "已开票", "未收票", "已收票",
+	} {
+		candidate = strings.ReplaceAll(candidate, token, " ")
+	}
 	replacements := []string{
 		"帮我查一下", "帮我查", "查一下", "查看", "看一下", "看下", "有哪些", "哪些", "哪个", "哪几个", "哪几家",
 		"今年", "本年", "累计", "年内", "至今", "到现在", "当前", "目前",
@@ -57,9 +64,27 @@ func isRealishQueryEntity(entity string) bool {
 		!looksLikeSyntheticQuestionFragment(trimmed)
 }
 
+var entityCoordinationSeparatorPattern = regexp.MustCompile(`以及|和|与|、`)
+
 // entityAppearsInQuestionText reports whether an entity is grounded in the
 // user's question text, without consulting fuzzy database candidates.
 func entityAppearsInQuestionText(question, entity string) bool {
+	if entityAppearsInQuestionFragment(question, entity, 2) {
+		return true
+	}
+	fragments := entityCoordinationSeparatorPattern.Split(question, -1)
+	if len(fragments) < 2 {
+		return false
+	}
+	for _, fragment := range fragments {
+		if entityAppearsInQuestionFragment(fragment, entity, 2) {
+			return true
+		}
+	}
+	return false
+}
+
+func entityAppearsInQuestionFragment(question, entity string, minMentionRunes int) bool {
 	name := strings.TrimSpace(entity)
 	normalizedName := normalizeEntityText(name)
 	if len([]rune(normalizedName)) < 2 {
@@ -72,7 +97,7 @@ func entityAppearsInQuestionText(question, entity string) bool {
 
 	mention := extractNamedEntityFromQuestion(question)
 	normalizedMention := normalizeEntityText(mention)
-	if len([]rune(normalizedMention)) < 2 || !isRealishQueryEntity(mention) {
+	if len([]rune(normalizedMention)) < minMentionRunes || !isRealishQueryEntity(mention) {
 		return false
 	}
 	return strings.Contains(normalizedName, normalizedMention) || strings.Contains(normalizedMention, normalizedName)
