@@ -57,6 +57,27 @@ func isRealishQueryEntity(entity string) bool {
 		!looksLikeSyntheticQuestionFragment(trimmed)
 }
 
+// entityAppearsInQuestionText reports whether an entity is grounded in the
+// user's question text, without consulting fuzzy database candidates.
+func entityAppearsInQuestionText(question, entity string) bool {
+	name := strings.TrimSpace(entity)
+	normalizedName := normalizeEntityText(name)
+	if len([]rune(normalizedName)) < 2 {
+		return false
+	}
+	normalizedQuestion := normalizeEntityText(question)
+	if strings.Contains(normalizedQuestion, normalizedName) {
+		return true
+	}
+
+	mention := extractNamedEntityFromQuestion(question)
+	normalizedMention := normalizeEntityText(mention)
+	if len([]rune(normalizedMention)) < 2 || !isRealishQueryEntity(mention) {
+		return false
+	}
+	return strings.Contains(normalizedName, normalizedMention) || strings.Contains(normalizedMention, normalizedName)
+}
+
 func looksLikeAccountFragment(entity string) bool {
 	return containsAny(entity, []string{"应收", "应付", "账款", "余额", "情况", "明细", "数据"})
 }
@@ -103,6 +124,7 @@ func looksLikeSyntheticQuestionFragment(entity string) bool {
 	questionFragments := []string{
 		"有哪些", "哪些", "哪个", "哪几个", "哪几家", "帮我查", "查一下",
 		"查看", "看一下", "看下",
+		"包括", "包含", "期间", "每个",
 		"起至今", "至今", "到现在", "当前", "目前", "最新", "最新月份", "最新完整月份", "最新可见月份", "可见月份", "最近完整月份", "当月", "月份",
 		"还有", "未付款", "未支付", "未付",
 		"主要靠", "依赖", "集中", "集中度", "占比", "排名", "前几", "最多", "最大", "某一两家", "一两家",

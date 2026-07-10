@@ -36,12 +36,6 @@ func (e *Engine) normalizeQuestionAndResolveCompany(question string) string {
 }
 
 func (e *Engine) resolveQueryEntity(q string, spec QuerySpec) string {
-	if shouldForceCompanyScopeContractAggregateWithConfig(q, e.currentRuleConfig()) {
-		return ""
-	}
-	if shouldTreatAsCompanyOfficialARAPQuestion(q, spec.Entity) {
-		return ""
-	}
 	entity := spec.Entity
 	if shouldResolveEntityDeeply(spec) {
 		if resolved := e.resolveEntityByScoredCandidates(q); resolved != "" {
@@ -56,8 +50,31 @@ func (e *Engine) resolveQueryEntity(q string, spec QuerySpec) string {
 	return entity
 }
 
+func shouldKeepEntityForQuestionScope(question, entity string, cfg RuleConfig) bool {
+	officialCompanyARAP := shouldTreatAsCompanyOfficialARAPQuestion(question, "")
+	companyScope := looksLikeCompanyScopeProjectAggregateQuestion(question) ||
+		shouldUseLatestRevenueContractAggregate(question, cfg) ||
+		officialCompanyARAP
+	if !companyScope {
+		return true
+	}
+	groundingQuestion := question
+	if officialCompanyARAP {
+		groundingQuestion = stripBalanceSheetAccountTerms(groundingQuestion)
+	}
+	return entityAppearsInQuestionText(groundingQuestion, entity)
+}
+
 func (e *Engine) applyQueryPriorityAdjustments(q string, intent Intent, spec QuerySpec, entity string, hasRealEntity bool, anchor time.Time) (QuerySpec, string, bool, time.Time) {
 	cfg := e.currentRuleConfig()
+	if !shouldKeepEntityForQuestionScope(q, entity, cfg) {
+		entity = ""
+		spec.Entity = ""
+		spec.BossRewrite.Entity = ""
+		spec.NeedsContractDimension = false
+		spec = reconcileQuerySpec(spec, entity, cfg)
+		return spec, entity, false, anchor
+	}
 	if intent == IntentIdentityQuery || isCounterpartyClassificationQuestionWithConfig(q, cfg) {
 		return spec, entity, hasRealEntity, anchor
 	}

@@ -1759,6 +1759,195 @@ func TestLatestRevenueSituationUsesContractAggregate(t *testing.T) {
 	}
 }
 
+func TestUnpaidProjectRosterStructuralWordingKeepsCompanyAggregate(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	seedUnpaidProjectRosterBusinessCutoffFixture(t, dbPath)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-STRUCTURAL','名称和科技有限公司','结构词候选项目')`); err != nil {
+		t.Fatalf("seed structural fuzzy candidate: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	question := "2025年到2026年未付款的项目明细，包括项目名称和对应金额"
+	if got := engine.resolveEntityByScoredCandidates(question); got != "名称和科技有限公司" {
+		t.Fatalf("fixture did not exercise structural fuzzy candidate: got %q", got)
+	}
+	res := engine.Query(question)
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["period"]; got != "2025-10~2026-06" {
+		t.Fatalf("period = %v, want actual project coverage 2025-10~2026-06; data=%+v", got, res.Data)
+	}
+	if got := res.Data["total"]; got != float64(500) {
+		t.Fatalf("total = %v, want project payable 500; data=%+v", got, res.Data)
+	}
+	spec, ok := res.Data["query_spec"].(map[string]any)
+	if !ok {
+		t.Fatalf("query_spec missing: %+v", res.Data)
+	}
+	if got := spec["entity"]; got != "" {
+		t.Fatalf("query_spec.entity = %v, want empty company aggregate; spec=%+v", got, spec)
+	}
+	if got := spec["needs_contract_dimension"]; got != false {
+		t.Fatalf("needs_contract_dimension = %v, want false; spec=%+v", got, spec)
+	}
+	if got := spec["prefer_contract_aggregate"]; got != true {
+		t.Fatalf("prefer_contract_aggregate = %v, want true; spec=%+v", got, spec)
+	}
+	summary, ok := res.Data["contract_summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("contract_summary missing: %+v", res.Data)
+	}
+	items, ok := summary["payable_open_items"].([]map[string]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("payable_open_items = %#v, want one real project item", summary["payable_open_items"])
+	}
+	if got := items[0]["contract_content"]; got != "测试供应商项目" {
+		t.Fatalf("contract_content = %v, want 测试供应商项目", got)
+	}
+	if got := items[0]["unpaid_amount"]; got != float64(500) {
+		t.Fatalf("unpaid_amount = %v, want 500", got)
+	}
+}
+
+func TestLatestRevenueUngroundedFuzzyCustomerStaysCompanyAggregate(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-LATEST-FUZZY','表最科技有限公司','无关客户项目')`); err != nil {
+		t.Fatalf("seed latest revenue fuzzy candidate: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.June, 28, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	question := "收入表最新月份营收数据"
+	if got := engine.resolveEntityByScoredCandidates(question); got != "表最科技有限公司" {
+		t.Fatalf("fixture did not exercise fuzzy customer candidate: got %q", got)
+	}
+	route := engine.resolveQueryRouting(question)
+	if route.entity != "" || route.hasRealEntity || route.spec.Entity != "" {
+		t.Fatalf("entity=%q spec.entity=%q hasRealEntity=%t, want company latest revenue", route.entity, route.spec.Entity, route.hasRealEntity)
+	}
+	if route.spec.QueryFamily != QueryFamilyCoreMetric || route.spec.NeedsContractDimension || !route.spec.PreferContractAggregate {
+		t.Fatalf("latest revenue route = %+v, want company contract aggregate", route.spec)
+	}
+	res := engine.Query(question)
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["total"]; got != float64(1000) {
+		t.Fatalf("total = %v, want company project revenue 1000; data=%+v", got, res.Data)
+	}
+}
+
+func TestOfficialARAPUngroundedNamedCandidateKeepsCompanyRoute(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO bank_statement(company, transaction_date, counterparty_name, summary, debit_amount, credit_amount) VALUES ('测试公司','2026-03-18','和其他应科技有限公司','无关账户片段候选',75,0)`); err != nil {
+		t.Fatalf("seed official AR/AP fuzzy candidate: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.April, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	question := "从官方余额表看，2026年3月应收账款、应付账款和其他应付款分别有多少？"
+	if got := engine.resolveEntityByScoredCandidates(question); got != "和其他应科技有限公司" {
+		t.Fatalf("fixture did not exercise account-fragment fuzzy candidate: got %q", got)
+	}
+	route := engine.resolveQueryRouting(question)
+	if route.entity != "" || route.hasRealEntity || route.spec.Entity != "" {
+		t.Fatalf("entity=%q spec.entity=%q hasRealEntity=%t, want official company AR/AP", route.entity, route.spec.Entity, route.hasRealEntity)
+	}
+	if route.spec.QueryFamily != QueryFamilyARAP {
+		t.Fatalf("query_family = %s, want %s; spec=%+v", route.spec.QueryFamily, QueryFamilyARAP, route.spec)
+	}
+	res := engine.Query(question)
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["source"]; got != "balance_sheet" {
+		t.Fatalf("source = %v, want balance_sheet; data=%+v", got, res.Data)
+	}
+	if got := res.Data["payable_side_total"]; got != float64(10665) {
+		t.Fatalf("payable_side_total = %v, want 10665", got)
+	}
+}
+
+func TestNamedProjectPayableRouteRemainsEntityScoped(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-NAMED-PAYABLE','南京林悦智能科技有限公司','南京林悦项目')`); err != nil {
+		t.Fatalf("seed named project: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司")
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	route := engine.resolveQueryRouting("南京林悦智能科技有限公司项目应付未付还有多少")
+	if route.entity != "南京林悦智能科技有限公司" || !route.hasRealEntity || route.spec.Entity != "南京林悦智能科技有限公司" {
+		t.Fatalf("entity=%q spec.entity=%q hasRealEntity=%t, want named project route", route.entity, route.spec.Entity, route.hasRealEntity)
+	}
+	if route.spec.QueryFamily != QueryFamilyContractDimension || !route.spec.NeedsContractDimension {
+		t.Fatalf("named project route = %+v, want contract dimension", route.spec)
+	}
+}
+
+func TestNamedCustomerLatestRevenueRouteRemainsEntityScoped(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.June, 28, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	route := engine.resolveQueryRouting("测试客户最新月份营收数据")
+	if route.entity != "测试客户" || !route.hasRealEntity || route.spec.Entity != "测试客户" {
+		t.Fatalf("entity=%q spec.entity=%q hasRealEntity=%t, want named customer route", route.entity, route.spec.Entity, route.hasRealEntity)
+	}
+	if route.spec.QueryFamily != QueryFamilyContractDimension || !route.spec.NeedsContractDimension || route.spec.PreferContractAggregate {
+		t.Fatalf("named customer route = %+v, want entity contract dimension", route.spec)
+	}
+}
+
 func TestContractAggregateDataFinalAnswerIncludesSourceLineage(t *testing.T) {
 	dbPath := buildContractARAPPriorityDB(t)
 	engine, err := NewEngine(dbPath, "测试公司")

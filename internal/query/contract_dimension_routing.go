@@ -200,6 +200,9 @@ func shouldUseCompanyScopeContractAggregateWithConfig(question string, cfg RuleC
 	if shouldUseContractAggregateAnalysisQuestion(q, cfg) {
 		return true
 	}
+	if !shouldKeepEntityForQuestionScope(q, extractNamedEntityFromQuestion(q), cfg) {
+		return true
+	}
 	if !containsAny(q, []string{"合同", "项目"}) {
 		return false
 	}

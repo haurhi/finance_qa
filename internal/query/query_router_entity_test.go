@@ -28,6 +28,16 @@ func TestIsRealishQueryEntityRejectsSyntheticTemporalAndGenericFragments(t *test
 	}
 }
 
+func TestIsRealishQueryEntityRejectsStructuralQuestionFragments(t *testing.T) {
+	for _, fragment := range []string{"包括", "包含", "期间", "每个", "对应"} {
+		t.Run(fragment, func(t *testing.T) {
+			if got := isRealishQueryEntity(fragment); got {
+				t.Fatalf("isRealishQueryEntity(%q) = true, want false", fragment)
+			}
+		})
+	}
+}
+
 func TestExtractNamedEntityRejectsCompanyScopeInvoicePaymentQuestion(t *testing.T) {
 	if got := extractNamedEntityFromQuestion("2026年3月已开票未付款的合同有哪些"); got != "" {
 		t.Fatalf("extractNamedEntityFromQuestion() = %q, want empty company-scope entity", got)

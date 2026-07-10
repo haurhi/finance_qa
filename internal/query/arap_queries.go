@@ -77,7 +77,7 @@ func shouldUseCompanyOfficialARAPComparison(question string) bool {
 // "对公中间业务收入-网上其他收入" that would otherwise hijack a company-level
 // balance question into the wrong counterparty/audit path.
 func shouldTreatAsCompanyOfficialARAPQuestion(question, entity string) bool {
-	if strings.TrimSpace(entity) != "" && entityAppearsAsCounterparty(question, entity) {
+	if entityAppearsInQuestionText(stripBalanceSheetAccountTerms(question), entity) {
 		return false
 	}
 	if !looksLikeBalanceSheetARAPQuestion(question) {
@@ -88,31 +88,6 @@ func shouldTreatAsCompanyOfficialARAPQuestion(question, entity string) bool {
 		return false
 	}
 	return true
-}
-
-// entityAppearsAsCounterparty reports whether the entity names a real
-// counterparty that the user mentioned in the question. It first strips the
-// canonical balance-sheet account terms from the question so that leftover
-// fragments such as "和其他应" (a substring of "其他应付款") are not mistaken
-// for real mentions, then checks whether a multi-character fragment of the
-// entity survives in the remaining text.
-func entityAppearsAsCounterparty(question, entity string) bool {
-	name := strings.TrimSpace(entity)
-	if len([]rune(name)) < 2 {
-		return false
-	}
-	strippedQuestion := stripBalanceSheetAccountTerms(question)
-	if strings.Contains(strippedQuestion, name) {
-		return true
-	}
-	normalized := normalizeEntityText(name)
-	if normalized == "" {
-		return false
-	}
-	if len([]rune(normalized)) >= 2 && strings.Contains(stripBalanceSheetAccountTerms(normalizeEntityText(question)), normalized) {
-		return true
-	}
-	return false
 }
 
 // stripBalanceSheetAccountTerms removes the canonical balance AR/AP account
