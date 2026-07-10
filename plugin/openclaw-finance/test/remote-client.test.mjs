@@ -421,6 +421,50 @@ test("finance-query does not use session raw while multiple runs remain active",
   });
 });
 
+test("finance-query keeps observable runs active while their raw questions are pending", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const sessionKey = "finance-observable-active-runs";
+    const observablePrompt = (question) => [
+      "[巡检要求]",
+      "这是一条只读巡检请求。回答前必须先调用 `finance-query` 获取最新事实。",
+      "",
+      "[用户原问题]",
+      question
+    ].join("\n");
+    const bankQuestion = "银行卡上，上个完整自然月净现金流是多少？";
+    const revenueQuestion = "收入表中最新月份项目结算营收是多少？";
+
+    for (const [runId, question] of [
+      ["observable-run-a", bankQuestion],
+      ["observable-run-b", revenueQuestion]
+    ]) {
+      const prompt = observablePrompt(question);
+      await hooks.get("before_prompt_build")({
+        prompt,
+        messages: [{ role: "user", content: [{ type: "text", text: prompt }] }]
+      }, { runId, sessionKey });
+    }
+
+    const unrelatedQuestion = "供应商上个完整自然月付款是多少？";
+    await hooks.get("before_prompt_build")({
+      prompt: unrelatedQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: unrelatedQuestion }] }]
+    }, { sessionKey: "unrelated-observable-fallback" });
+    await tools.get("finance-query").execute("ambiguous-observable-runs", {
+      query: "2026年6月项目结算营收",
+      raw_user_query: "模型自带的错误原问题"
+    }, { sessionKey });
+
+    assert.equal(Object.hasOwn(toolCalls.at(-1).arguments, "raw_user_query"), false);
+  }, {
+    toolPayload: {
+      success: true,
+      finance_facts: { required_atoms: ["金额：1 元"] }
+    }
+  });
+});
+
 test("finance-query execute preserves reconciliation difference intent from raw user question", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {

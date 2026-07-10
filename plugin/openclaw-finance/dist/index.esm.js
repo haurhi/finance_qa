@@ -949,7 +949,7 @@ function clearPendingFinanceFacts(event, ctx) {
   const scope = financeScope(event, ctx);
   pendingFinanceFactAtomsBySession.delete(scope.primaryKey);
   pendingFinanceFactPayloadsBySession.delete(scope.primaryKey);
-  if (scope.runKey) {
+  if (scope.runKey && !latestFinanceQuestionBySession.has(scope.primaryKey)) {
     unregisterFinanceRunForSession(scope);
   }
 }
