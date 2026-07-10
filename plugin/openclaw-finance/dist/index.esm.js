@@ -1240,17 +1240,34 @@ function metricAliasesForConflictScan(metric) {
   const name = metricNameForConflictScan(metric);
   const aliases = new Set();
   if (name) aliases.add(name);
-  if (/差异|差额|相差|账上净利润-银行净流入/.test(name)) {
+  const isDifferenceMetric = /差异|差额|相差|账上净利润-银行净流入/.test(name);
+  if (isDifferenceMetric) {
     ["差异金额", "名义差额", "差异", "差额", "相差", "差了"].forEach((alias) => aliases.add(alias));
   }
-  if (name.includes("银行净流入")) {
+  if (!isDifferenceMetric && name.includes("银行净流入")) {
     aliases.add("净流入");
   }
-  if (name.includes("账上净利润")) {
+  if (!isDifferenceMetric && name.includes("账上净利润")) {
     aliases.add("账上利润");
     aliases.add("净利润");
   }
   return [...aliases].filter((alias) => alias.length >= 2);
+}
+
+function financeMetricAmountsOnLine(line, aliases) {
+  const amounts = [];
+  const prefixPattern = /^(?:\s|[：:]|为|是|约|共|合计|人民币|\*{1,2}){0,16}(-?[0-9][0-9,]*(?:\.\d+)?)\s*(万元|万|元)/;
+  for (const alias of aliases) {
+    let fromIndex = 0;
+    while (fromIndex < line.length) {
+      const aliasIndex = line.indexOf(alias, fromIndex);
+      if (aliasIndex < 0) break;
+      const match = line.slice(aliasIndex + alias.length).match(prefixPattern);
+      if (match) amounts.push(displayedFinanceAmountInYuan(match[1], match[2]));
+      fromIndex = aliasIndex + alias.length;
+    }
+  }
+  return amounts;
 }
 
 function hasFinanceFactMetricAmountConflict(text, payload) {
@@ -1258,7 +1275,6 @@ function hasFinanceFactMetricAmountConflict(text, payload) {
   const metrics = compact?.metrics && typeof compact.metrics === "object" ? compact.metrics : {};
   const rawText = String(text || "");
   if (!rawText.trim()) return false;
-  const moneyPattern = /(-?[0-9][0-9,]*(?:\.\d+)?)(\s*)(万元|万|元)/g;
   for (const [rawMetric, rawExpected] of Object.entries(metrics)) {
     const aliases = metricAliasesForConflictScan(rawMetric);
     if (!aliases.length) continue;
@@ -1266,10 +1282,8 @@ function hasFinanceFactMetricAmountConflict(text, payload) {
     if (!Number.isFinite(expected)) continue;
     for (const line of rawText.split("\n")) {
       if (!aliases.some((alias) => line.includes(alias))) continue;
-      const matches = [...line.matchAll(moneyPattern)];
-      if (!matches.length) continue;
-      const hasExpected = matches.some((match) => sameFinanceAmount(displayedFinanceAmountInYuan(match[1], match[3]), expected));
-      if (!hasExpected) return true;
+      const amounts = financeMetricAmountsOnLine(line, aliases);
+      if (amounts.some((amount) => !sameFinanceAmount(amount, expected))) return true;
     }
   }
   return false;
@@ -1378,6 +1392,11 @@ function financeDetailLine(row) {
 function canonicalFinanceAnswerFromPayload(payload) {
   const compact = compactFinancePayload(payload);
   if (!compact || typeof compact !== "object") return "";
+  const requiredAtoms = compact.finance_facts?.required_atoms;
+  if (Array.isArray(requiredAtoms)) {
+    const lines = [...new Set(requiredAtoms.map((atom) => String(atom || "").trim()).filter(Boolean))];
+    if (lines.length) return lines.join("\n");
+  }
   const lines = [];
   if (compact.period) lines.push(`期间：${compact.period}`);
   if (compact.metric_label) lines.push(`口径：${compact.metric_label}`);

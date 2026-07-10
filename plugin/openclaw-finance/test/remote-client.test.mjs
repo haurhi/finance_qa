@@ -988,38 +988,7 @@ test("before_message_write appends only missing AR/AP fact atoms to a partial an
   await withFinancePluginHarness(toolCalls, async ({ hooks }) => {
     const beforeWrite = hooks.get("before_message_write");
     const sessionKey = "finance-official-arap-partial-answer-session";
-    beforeWrite({
-      message: {
-        role: "toolResult",
-        toolName: "finance-query",
-        content: [{
-          type: "text",
-          text: JSON.stringify({
-            success: true,
-            final_answer: [
-              "完整模板不要复制：先说结论，再展开计算过程。",
-              "应收 1,897.60 元；应付 4,585.12 元；其他应付 500.00 元；应付端共 5,085.12 元。",
-              "过程话术：逐项查询余额后再做应付端加总。"
-            ].join("\n"),
-            finance_facts: {
-              schema_version: "finance_facts.v1",
-              metrics: {
-                "应收账款": 1897.60,
-                "应付账款": 4585.12,
-                "其他应付款": 500.00,
-                "应付端合计": 5085.12
-              },
-              required_atoms: [
-                "应收账款：1897.60 元",
-                "应付账款：4585.12 元",
-                "其他应付款：500.00 元",
-                "应付端合计：5085.12 元"
-              ]
-            }
-          })
-        }]
-      }
-    }, { sessionKey });
+    recordFinanceToolPayload(beforeWrite, sessionKey, officialArapFinanceToolPayload());
 
     const partialAnswer = {
       role: "assistant",
@@ -1034,6 +1003,30 @@ test("before_message_write appends only missing AR/AP fact atoms to a partial an
     assert.match(text, /其他应付款：500\.00 元/);
     assert.match(text, /应付端合计：5085\.12 元/);
     assert.doesNotMatch(text, /完整模板不要复制|先说结论，再展开计算过程|过程话术|逐项查询余额|final_answer|finance-query|工具返回/);
+  });
+});
+
+test("before_message_write rejects swapped AR/AP metric amounts on one line", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks }) => {
+    const beforeWrite = hooks.get("before_message_write");
+    const sessionKey = "finance-official-arap-swapped-amounts-session";
+    recordFinanceToolPayload(beforeWrite, sessionKey, officialArapFinanceToolPayload());
+
+    const swappedAnswer = {
+      role: "assistant",
+      content: [{
+        type: "text",
+        text: "应收账款 4585.12 元，应付账款 1897.60 元，其他应付款 500.00 元，应付端合计 5085.12 元。"
+      }],
+      stopReason: "stop"
+    };
+    const patched = beforeWrite({ message: swappedAnswer }, { sessionKey })?.message;
+    const text = patched.content[0].text;
+
+    assert.match(text, /应收账款：1897\.60 元/);
+    assert.match(text, /应付账款：4585\.12 元/);
+    assert.doesNotMatch(text, /应收账款 4585\.12 元|应付账款 1897\.60 元/);
   });
 });
 
@@ -1302,6 +1295,26 @@ test("before_message_write replaces assistant answer that conflicts with reconci
     const diffText = diffPatched.content[0].text;
     assert.match(diffText, /差异金额：925150\.88 元/);
     assert.doesNotMatch(diffText, /差异 0 元/);
+
+    const correctNarrativeText = [
+      "解释：银行收付时点与权责发生时点不同。",
+      "期间：2026-03",
+      "口径：账上利润与银行流水双口径对账",
+      "银行净流入：-633859.33 元",
+      "账上净利润：291291.55 元",
+      "差异金额：925150.88 元",
+      "金额：925150.88 元",
+      "来源：《交易查询，20260101-20260331，共143笔.xlsx》；《南京优集1-3月序时账.xls》",
+      "来源更新时间：2026-04-27 13:33:40",
+      "口径：账上净利润-银行净流入名义差额"
+    ].join("\n");
+    const correctAnswer = {
+      role: "assistant",
+      content: [{ type: "text", text: correctNarrativeText }],
+      stopReason: "stop"
+    };
+    const correctPatched = beforeWrite({ message: correctAnswer }, { sessionKey })?.message;
+    assert.equal(correctPatched.content[0].text, correctNarrativeText);
   });
 });
 
@@ -1757,6 +1770,42 @@ async function withServer(handler, run) {
 function writeJSON(res, payload) {
   res.setHeader("Content-Type", "application/json");
   res.end(JSON.stringify(payload));
+}
+
+function officialArapFinanceToolPayload() {
+  return {
+    success: true,
+    final_answer: [
+      "完整模板不要复制：先说结论，再展开计算过程。",
+      "应收 1,897.60 元；应付 4,585.12 元；其他应付 500.00 元；应付端共 5,085.12 元。",
+      "过程话术：逐项查询余额后再做应付端加总。"
+    ].join("\n"),
+    finance_facts: {
+      schema_version: "finance_facts.v1",
+      metrics: {
+        "应收账款": 1897.60,
+        "应付账款": 4585.12,
+        "其他应付款": 500.00,
+        "应付端合计": 5085.12
+      },
+      required_atoms: [
+        "应收账款：1897.60 元",
+        "应付账款：4585.12 元",
+        "其他应付款：500.00 元",
+        "应付端合计：5085.12 元"
+      ]
+    }
+  };
+}
+
+function recordFinanceToolPayload(beforeWrite, sessionKey, payload) {
+  beforeWrite({
+    message: {
+      role: "toolResult",
+      toolName: "finance-query",
+      content: [{ type: "text", text: JSON.stringify(payload) }]
+    }
+  }, { sessionKey });
 }
 
 async function withFinancePluginHarness(toolCalls, run, options = {}) {
