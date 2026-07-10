@@ -244,6 +244,7 @@ func TestReconciliationAlwaysPublishesThreeFacts(t *testing.T) {
 		bankNetFlowLabel   = "银行净流入"
 		bookNetProfitLabel = "账上净利润"
 		nominalDifference  = "名义差额（账上净利润-银行净流入）"
+		differenceAtom     = "差异金额（名义差额，账上净利润-银行净流入）"
 		differenceHeadline = "账上净利润-银行净流入名义差额"
 	)
 
@@ -298,7 +299,7 @@ func TestReconciliationAlwaysPublishesThreeFacts(t *testing.T) {
 			wantRequiredAtoms := []string{
 				bankNetFlowLabel + "：-250.00 元",
 				bookNetProfitLabel + "：200.00 元",
-				nominalDifference + "：450.00 元",
+				differenceAtom + "：450.00 元",
 			}
 			if len(requiredAtoms) < len(wantRequiredAtoms) {
 				t.Errorf("finance_facts.required_atoms = %#v, want ordered reconciliation facts %#v", requiredAtoms, wantRequiredAtoms)
@@ -410,7 +411,7 @@ func TestCompareBookProfitAndBankNetInflowStatesNominalDifference(t *testing.T) 
 	for _, want := range []string{
 		"银行净流入：-250.00 元",
 		"账上净利润：200.00 元",
-		"名义差额（账上净利润-银行净流入）：450.00 元",
+		"差异金额（名义差额，账上净利润-银行净流入）：450.00 元",
 	} {
 		if !containsString(requiredAtoms, want) {
 			t.Fatalf("finance_facts.required_atoms missing %q: %#v", want, requiredAtoms)

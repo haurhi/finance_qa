@@ -110,7 +110,7 @@ func annotateReconciliationFacts(data map[string]any, book monthlyBookView, cash
 		"required_atoms": financeMetricRequiredAtoms(
 			financeMetricAtom{Label: "银行净流入", Value: bankNetInflow},
 			financeMetricAtom{Label: "账上净利润", Value: bookProfit},
-			financeMetricAtom{Label: "名义差额（账上净利润-银行净流入）", Value: nominalDifference},
+			financeMetricAtom{Label: "差异金额（名义差额，账上净利润-银行净流入）", Value: nominalDifference},
 		),
 	}
 	data["explanation_hints"] = []string{
