@@ -128,9 +128,23 @@ func (e *Engine) queryCompanyOfficialARAP(period string) Result {
 	}
 
 	data := map[string]any{
-		"type":                  "company_official_arap",
-		"period":                period,
-		"source":                "balance_sheet",
+		"type":   "company_official_arap",
+		"period": period,
+		"source": "balance_sheet",
+		"metrics": map[string]any{
+			"应收账款":  receivableTotal,
+			"应付账款":  payableTotal,
+			"其他应付款": otherPayableTotal,
+			"应付端合计": payableSideTotal,
+		},
+		"finance_facts": map[string]any{
+			"required_atoms": financeMetricRequiredAtoms(
+				financeMetricAtom{Label: "应收账款", Value: receivableTotal},
+				financeMetricAtom{Label: "应付账款", Value: payableTotal},
+				financeMetricAtom{Label: "其他应付款", Value: otherPayableTotal},
+				financeMetricAtom{Label: "应付端合计", Value: payableSideTotal},
+			),
+		},
 		"receivable_total":      receivableTotal,
 		"payable_total":         payableTotal,
 		"other_payable_total":   otherPayableTotal,

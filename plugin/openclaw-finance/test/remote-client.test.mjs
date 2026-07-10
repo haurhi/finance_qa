@@ -983,6 +983,60 @@ test("prefetched finance facts guard repeated answers that skip a fresh tool cal
   });
 });
 
+test("before_message_write appends only missing AR/AP fact atoms to a partial answer", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks }) => {
+    const beforeWrite = hooks.get("before_message_write");
+    const sessionKey = "finance-official-arap-partial-answer-session";
+    beforeWrite({
+      message: {
+        role: "toolResult",
+        toolName: "finance-query",
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: true,
+            final_answer: [
+              "完整模板不要复制：先说结论，再展开计算过程。",
+              "应收 1,897.60 元；应付 4,585.12 元；其他应付 500.00 元；应付端共 5,085.12 元。",
+              "过程话术：逐项查询余额后再做应付端加总。"
+            ].join("\n"),
+            finance_facts: {
+              schema_version: "finance_facts.v1",
+              metrics: {
+                "应收账款": 1897.60,
+                "应付账款": 4585.12,
+                "其他应付款": 500.00,
+                "应付端合计": 5085.12
+              },
+              required_atoms: [
+                "应收账款：1897.60 元",
+                "应付账款：4585.12 元",
+                "其他应付款：500.00 元",
+                "应付端合计：5085.12 元"
+              ]
+            }
+          })
+        }]
+      }
+    }, { sessionKey });
+
+    const partialAnswer = {
+      role: "assistant",
+      content: [{ type: "text", text: "先说结果：应收账款：1897.60 元。" }],
+      stopReason: "stop"
+    };
+    const patched = beforeWrite({ message: partialAnswer }, { sessionKey })?.message;
+    const text = patched.content[0].text;
+
+    assert.equal((text.match(/应收账款：1897\.60 元/g) || []).length, 1);
+    assert.match(text, /应付账款：4585\.12 元/);
+    assert.match(text, /其他应付款：500\.00 元/);
+    assert.match(text, /应付端合计：5085\.12 元/);
+    assert.doesNotMatch(text, /完整模板不要复制|先说结论，再展开计算过程|过程话术|逐项查询余额|final_answer|finance-query|工具返回/);
+  });
+});
+
 test("finance facts package drives prompt context and answer guard", async () => {
   const toolCalls = [];
   const toolPayload = {

@@ -126,6 +126,40 @@ func TestOfficialBalanceSheetARAPRoutingIgnoresCounterpartyFragments(t *testing.
 			t.Fatalf("message = %q, want include %q", res.Message, want)
 		}
 	}
+
+	facts, ok := res.Data["finance_facts"].(map[string]any)
+	if !ok {
+		t.Fatalf("finance_facts missing: data=%+v", res.Data)
+	}
+	metrics, ok := facts["metrics"].(map[string]any)
+	if !ok {
+		t.Fatalf("finance_facts.metrics missing: facts=%+v", facts)
+	}
+	for label, want := range map[string]float64{
+		"应收账款":  1897.60,
+		"应付账款":  4585.12,
+		"其他应付款": 500.00,
+		"应付端合计": 5085.12,
+	} {
+		if got := anyToFloat64(metrics[label]); got != want {
+			t.Errorf("finance_facts.metrics[%q] = %v, want %v; metrics=%+v", label, got, want, metrics)
+		}
+	}
+	wantRequiredAtoms := []string{
+		"应收账款：1897.60 元",
+		"应付账款：4585.12 元",
+		"其他应付款：500.00 元",
+		"应付端合计：5085.12 元",
+	}
+	requiredAtoms := anySourceStringSlice(facts["required_atoms"])
+	if len(requiredAtoms) < len(wantRequiredAtoms) {
+		t.Fatalf("finance_facts.required_atoms = %#v, want ordered AR/AP facts %#v", requiredAtoms, wantRequiredAtoms)
+	}
+	for i, want := range wantRequiredAtoms {
+		if got := requiredAtoms[i]; got != want {
+			t.Errorf("finance_facts.required_atoms[%d] = %q, want %q; atoms=%#v", i, got, want, requiredAtoms)
+		}
+	}
 }
 
 func TestExplicitBankCashReceiptQueryAnswersFromBankStatement(t *testing.T) {
