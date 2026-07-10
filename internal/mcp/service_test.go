@@ -76,6 +76,18 @@ func TestEffectiveFinanceQueryProtectsCompanyScopeAndContinuationSemantics(t *te
 			want:      []string{"收入表", "最新月份", "营收"},
 		},
 		{
+			name:      "reconciliation_comparison_intent",
+			raw:       "对比一下最近完整月份账上利润和银行流水净流入。",
+			rewritten: "最近完整月份账上利润和银行流水净流入",
+			want:      []string{"对比", "最近完整月份", "账上利润", "银行流水净流入"},
+		},
+		{
+			name:      "reconciliation_explanation_intent",
+			raw:       "为什么最近完整月份账上利润和银行净流入差这么多？",
+			rewritten: "最近完整月份账上利润和银行净流入差异原因",
+			want:      []string{"为什么", "最近完整月份", "账上利润", "银行净流入"},
+		},
+		{
 			name:      "non_semantic_continuation",
 			raw:       "最近完整月份净利润是多少？",
 			rewritten: "再算一次",
