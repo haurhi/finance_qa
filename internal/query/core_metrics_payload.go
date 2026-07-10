@@ -61,6 +61,9 @@ func buildAccrualCoreMetricsMessage(period string, requestedMetrics []string, bo
 			return fmt.Sprintf("%s 账上收入 %.2f 元。", period, book.Revenue)
 		}
 	}
+	if containsString(requestedMetrics, "净利润") {
+		return fmt.Sprintf("%s 账上收入 %.2f 元，成本及费用 %.2f 元，净利润 %.2f 元（利润 %.2f 元，所得税 %.2f 元）。", period, book.Revenue, book.TotalCost, book.NetProfit, book.Profit, book.IncomeTax)
+	}
 	return fmt.Sprintf("%s 账上收入 %.2f 元，成本及费用 %.2f 元，利润 %.2f 元（含营业外收支）。", period, book.Revenue, book.TotalCost, book.Profit)
 }
 

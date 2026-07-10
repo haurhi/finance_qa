@@ -529,6 +529,13 @@ function sameFinanceQuestionText(a, b) {
   return !!left && !!right && left === right;
 }
 
+function modelRawQuestionPreservesModelQuery(rawQuestion, modelQuery) {
+  const raw = comparableFinanceQuestionText(rawQuestion);
+  const query = comparableFinanceQuestionText(modelQuery);
+  if (!raw || !query) return false;
+  return raw === query || raw.includes(query) || query.includes(raw);
+}
+
 function messageContentText(content) {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -1789,12 +1796,13 @@ function createFinanceTool(name, description, parameters, toolCtx) {
       const modelQuery = name === "finance-query" ? financeQuestionText(rawParamsObject.query || "") : "";
       const modelRawQuestion = name === "finance-query" ? financeQuestionText(rawParamsObject.raw_user_query || "") : "";
       const protectedQuestion = name === "finance-query" ? takeLatestFinanceQuestionForTool(executionCtx, modelRawQuestion) : "";
+      const rawUserQuestion = protectedQuestion || (modelRawQuestionPreservesModelQuery(modelRawQuestion, modelQuery) ? modelRawQuestion : "");
       const params = name === "finance-query"
         ? (modelQuery
           ? {
             ...forwardedParams,
             query: modelQuery,
-            ...(protectedQuestion ? { raw_user_query: protectedQuestion } : {})
+            ...(rawUserQuestion ? { raw_user_query: rawUserQuestion } : {})
           }
           : forwardedParams)
         : rawParams;

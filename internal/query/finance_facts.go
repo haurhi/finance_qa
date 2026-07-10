@@ -87,6 +87,9 @@ func buildFinanceFacts(spec QuerySpec, data map[string]any) map[string]any {
 	if warnings := financeFactStringSlice(data["warnings"], data["warning"]); len(warnings) > 0 {
 		facts["warnings"] = warnings
 	}
+	if requested := financeFactStringSlice(data["requested_metrics"]); len(requested) > 0 {
+		facts["requested_metrics"] = requested
+	}
 	if hints := financeFactStringSlice(data["explanation_hints"], data["tax_inclusion_note"], data["contract_fallback_reason"]); len(hints) > 0 {
 		facts["explanation_hints"] = hints
 	}
@@ -265,6 +268,11 @@ func financeFactRequiredAtoms(facts map[string]any) []string {
 		atoms = append(atoms, fmt.Sprintf("金额：%.2f 元", amount))
 	}
 	if metrics, ok := facts["metrics"].(map[string]any); ok {
+		for _, key := range financeFactStringSlice(facts["requested_metrics"]) {
+			if amount, ok := financeFactAnyNumber(metrics[key]); ok {
+				atoms = append(atoms, fmt.Sprintf("%s：%.2f 元", coreMetricRequiredAtomLabel(key), amount))
+			}
+		}
 		for _, key := range []string{"现金流入", "现金流出", "净现金流"} {
 			if amount, ok := financeFactAnyNumber(metrics[key]); ok {
 				atoms = append(atoms, fmt.Sprintf("%s：%.2f 元", key, amount))

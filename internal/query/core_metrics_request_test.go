@@ -1,6 +1,9 @@
 package query
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestResolveCoreMetricRequestForNetProfit(t *testing.T) {
 	got := resolveCoreMetricRequest("2026年2月账上净利润是多少", "核心指标")
@@ -26,6 +29,34 @@ func TestResolveCoreMetricRequestForMultipleMetricsUsesProvidedLabel(t *testing.
 	}
 	if got.PrimaryMetric != "收入" {
 		t.Fatalf("PrimaryMetric = %q, want %q", got.PrimaryMetric, "收入")
+	}
+}
+
+func TestResolveCoreMetricRequestForIncomeCostAndNetProfit(t *testing.T) {
+	got := resolveCoreMetricRequest("序时账看，最新完整月份账上收入、成本费用和净利润是多少？", "核心指标")
+
+	if !got.ExplicitNetProfit {
+		t.Fatalf("ExplicitNetProfit = false, want true")
+	}
+	assertMetricListEqual(t, got.RequestedMetrics, []string{"收入", "成本", "净利润"})
+	if got.MetricLabel != "净利润" {
+		t.Fatalf("MetricLabel = %q, want %q", got.MetricLabel, "净利润")
+	}
+}
+
+func TestBuildAccrualCoreMetricsMessageUsesNetProfitWhenRequested(t *testing.T) {
+	book := monthlyBookView{
+		Revenue:   3106310.34,
+		TotalCost: 2815018.91,
+		Profit:    291291.55,
+		NetProfit: 291291.55,
+	}
+
+	got := buildAccrualCoreMetricsMessage("2026-03", []string{"收入", "成本", "净利润"}, book)
+	for _, want := range []string{"账上收入 3106310.34", "成本及费用 2815018.91", "净利润 291291.55"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("message = %q, want fragment %q", got, want)
+		}
 	}
 }
 

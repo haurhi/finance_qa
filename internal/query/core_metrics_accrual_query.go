@@ -134,7 +134,13 @@ func buildAccrualCoreMetricResultData(period string, year, month int, bookSource
 	data["account_value"] = accountValue
 	data["total"] = accountValue
 	data["data_ready"] = true
-	data["metrics"] = buildCoreMetricMetricsMap(book)
+	metrics := buildCoreMetricMetricsMap(book)
+	data["metrics"] = metrics
+	if atoms := requestedCoreMetricRequiredAtoms(requestedMetrics, metrics); len(atoms) > 0 {
+		data["finance_facts"] = map[string]any{
+			"required_atoms": atoms,
+		}
+	}
 	data["monthly"] = buildCoreMetricMonthlyPayload(year, month, bookSource, book)
 	data["query_spec_overrides"] = map[string]any{
 		"period_from": period,

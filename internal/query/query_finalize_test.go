@@ -274,6 +274,55 @@ func TestFinalizeQueryResultBuildsCashFlowFinanceFacts(t *testing.T) {
 	}
 }
 
+func TestFinalizeQueryResultPublishesRequestedCoreMetricAtoms(t *testing.T) {
+	ctx := queryExecutionContext{
+		spec: QuerySpec{
+			OriginalQuestion:   "序时账看，最新完整月份账上收入、成本费用和净利润是多少？",
+			QueryFamily:        QueryFamilyGeneral,
+			MetricKind:         MetricKindProfit,
+			PeriodFrom:         "2026-03",
+			PeriodTo:           "2026-03",
+			SourceConstraint:   BossSourceJournal,
+			NormalizedQuestion: "序时账看最新完整月份账上收入成本费用和净利润是多少",
+		},
+	}
+
+	res := finalizeQueryResult(ctx, Result{
+		Success: true,
+		Message: "2026-03 账上收入 3106310.34 元，成本及费用 2815018.91 元，净利润 291291.55 元。",
+		Data: map[string]any{
+			"period":            "2026-03",
+			"requested_metrics": []string{"收入", "成本", "净利润"},
+			"total":             291291.55,
+			"metric":            "净利润",
+			"metrics": map[string]any{
+				"收入":  3106310.34,
+				"成本":  2815018.91,
+				"净利润": 291291.55,
+			},
+			"source_tables":      []string{"fin_journal"},
+			"source_documents":   []string{"《南京优集1-3月序时账.xls》"},
+			"source_note":        "来源：《南京优集1-3月序时账.xls》",
+			"source_update_note": "来源更新时间：2026-04-27 13:33:40",
+		},
+	})
+
+	facts, ok := res.Data["finance_facts"].(map[string]any)
+	if !ok {
+		t.Fatalf("finance_facts missing: %+v", res.Data)
+	}
+	required := anySourceStringSlice(facts["required_atoms"])
+	for _, want := range []string{
+		"收入：3106310.34 元",
+		"成本及费用：2815018.91 元",
+		"净利润：291291.55 元",
+	} {
+		if !containsString(required, want) {
+			t.Fatalf("required_atoms = %#v, want %q", required, want)
+		}
+	}
+}
+
 func TestFinalizeQueryResultLabelsSourceConstraintBasis(t *testing.T) {
 	ctx := queryExecutionContext{
 		spec: QuerySpec{

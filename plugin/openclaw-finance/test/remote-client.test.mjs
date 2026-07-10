@@ -308,6 +308,20 @@ test("finance-query fails closed when one session has multiple ambiguous active 
   });
 });
 
+test("finance-query uses model raw_user_query when it preserves the same rewritten question", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ tools }) => {
+    await tools.get("finance-query").execute("call-model-preserved-raw", {
+      query: "最新完整月份的应收应付挂账情况",
+      raw_user_query: "从官方余额表看，最新完整月份的应收应付挂账情况怎么样？"
+    });
+
+    const args = toolCalls.at(-1).arguments;
+    assert.equal(args.query, "最新完整月份的应收应付挂账情况");
+    assert.equal(args.raw_user_query, "从官方余额表看，最新完整月份的应收应付挂账情况怎么样？");
+  });
+});
+
 test("finance-query unscoped execute fails closed across multiple session-only prompts", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
