@@ -185,12 +185,7 @@ func isFinanceRetryOrContinuation(text string) bool {
 		return false
 	}
 	normalized := strings.Trim(strings.TrimSpace(text), "，,。.！!？?；;：:")
-	for _, term := range financeRetryOrContinuationTerms {
-		if normalized == term {
-			return true
-		}
-	}
-	return false
+	return containsAnyText(normalized, financeRetryOrContinuationTerms)
 }
 
 func isCompanyProjectRosterQuery(text string) bool {
@@ -303,7 +298,7 @@ func mergeProtectedFinanceQuery(rawUser, rewritten string) string {
 		return rawText
 	}
 	if isCompanyProjectRosterQuery(rawText) {
-		subjects := specificFinanceSubjectCandidates(hint)
+		subjects := specificFinanceRosterSubjectCandidates(hint)
 		if len(subjects) == 0 {
 			return rawText
 		}
@@ -316,6 +311,17 @@ func mergeProtectedFinanceQuery(rawUser, rewritten string) string {
 		return rawText
 	}
 	return rawText + "；补充识别：" + hint
+}
+
+func specificFinanceRosterSubjectCandidates(text string) []string {
+	all := specificFinanceSubjectCandidates(text)
+	validated := make([]string, 0, len(all))
+	for _, subject := range all {
+		if strings.ContainsAny(subject, "-－0123456789") {
+			validated = append(validated, subject)
+		}
+	}
+	return validated
 }
 
 func stripFinancePeriodPhrases(text string) string {
