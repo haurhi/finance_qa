@@ -1015,14 +1015,17 @@ function takeLatestFinanceQuestionForTool(ctx) {
     return question;
   }
   if (!scope.runKey) {
-    const runKeys = activeFinanceRunKeysForSession(scope).filter((key) => latestFinanceQuestionBySession.has(key));
+    const runKeys = activeFinanceRunKeysForSession(scope);
+    if (runKeys.length > 1) return "";
     if (runKeys.length === 1) {
       const key = runKeys[0];
-      const question = latestFinanceQuestionBySession.get(key) || "";
-      latestFinanceQuestionBySession.delete(key);
-      return question;
+      if (latestFinanceQuestionBySession.has(key)) {
+        const question = latestFinanceQuestionBySession.get(key) || "";
+        latestFinanceQuestionBySession.delete(key);
+        return question;
+      }
+      return "";
     }
-    if (runKeys.length > 1) return "";
     if (latestFinanceQuestionBySession.has(scope.sessionStateKey)) {
       const question = latestFinanceQuestionBySession.get(scope.sessionStateKey) || "";
       latestFinanceQuestionBySession.delete(scope.sessionStateKey);

@@ -308,6 +308,84 @@ test("finance-query fails closed when one session has multiple ambiguous active 
   });
 });
 
+test("finance-query does not borrow the remaining raw question after another active run consumes its own", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const sessionKey = "finance-partially-consumed-session";
+    const bankContext = { runId: "partially-consumed-run-a", sessionKey };
+    const revenueContext = { runId: "partially-consumed-run-b", sessionKey };
+    const bankQuestion = "银行卡上，上个完整自然月净现金流是多少？";
+    const revenueQuestion = "收入表中最新月份项目结算营收是多少？";
+
+    await hooks.get("before_prompt_build")({
+      prompt: bankQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: bankQuestion }] }]
+    }, bankContext);
+    await hooks.get("before_prompt_build")({
+      prompt: revenueQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: revenueQuestion }] }]
+    }, revenueContext);
+
+    await tools.get("finance-query").execute("consume-run-a", {
+      query: "2026年6月银行卡净现金流"
+    }, bankContext);
+    await tools.get("finance-query").execute("ambiguous-after-run-a", {
+      query: "2026年6月项目结算营收",
+      raw_user_query: "模型自带的错误原问题"
+    }, { sessionKey });
+
+    assert.equal(Object.hasOwn(toolCalls.at(-1).arguments, "raw_user_query"), false);
+  }, {
+    toolPayload: {
+      success: true,
+      finance_facts: { required_atoms: ["金额：1 元"] }
+    }
+  });
+});
+
+test("finance-query does not use global fallback after all active run raw questions are consumed", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const sessionKey = "finance-fully-consumed-session";
+    const bankContext = { runId: "fully-consumed-run-a", sessionKey };
+    const revenueContext = { runId: "fully-consumed-run-b", sessionKey };
+    const bankQuestion = "银行卡上，上个完整自然月净现金流是多少？";
+    const revenueQuestion = "收入表中最新月份项目结算营收是多少？";
+
+    await hooks.get("before_prompt_build")({
+      prompt: bankQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: bankQuestion }] }]
+    }, bankContext);
+    await hooks.get("before_prompt_build")({
+      prompt: revenueQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: revenueQuestion }] }]
+    }, revenueContext);
+    await tools.get("finance-query").execute("consume-run-a", {
+      query: "2026年6月银行卡净现金流"
+    }, bankContext);
+    await tools.get("finance-query").execute("consume-run-b", {
+      query: "2026年6月项目结算营收"
+    }, revenueContext);
+
+    const unrelatedQuestion = "供应商上个完整自然月付款是多少？";
+    await hooks.get("before_prompt_build")({
+      prompt: unrelatedQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: unrelatedQuestion }] }]
+    }, { sessionKey: "unrelated-fully-consumed-fallback" });
+    await tools.get("finance-query").execute("ambiguous-after-both", {
+      query: "2026年6月项目结算营收",
+      raw_user_query: "模型自带的错误原问题"
+    }, { sessionKey });
+
+    assert.equal(Object.hasOwn(toolCalls.at(-1).arguments, "raw_user_query"), false);
+  }, {
+    toolPayload: {
+      success: true,
+      finance_facts: { required_atoms: ["金额：1 元"] }
+    }
+  });
+});
+
 test("finance-query execute preserves reconciliation difference intent from raw user question", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
