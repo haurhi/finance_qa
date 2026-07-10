@@ -527,10 +527,11 @@ For each pair below, send a JSON-RPC `tools/call` to `./bin/financeqa serve` wit
 {"query":"2026年6月净利润","raw_user_query":"老板，从账上看，最近完整月份的净利润是多少？"}
 {"query":"收入表最新月份营收数据","raw_user_query":"帮我看下收入表中最新月份的营收数据。"}
 {"query":"最近完整月份账上利润和银行流水净流入","raw_user_query":"对比一下最近完整月份账上利润和银行流水净流入。"}
-{"query":"2025年10月到2026年6月项目应收未收","raw_user_query":"从2025年10月到上个完整月月底，项目应收未收是多少？"}
+{"query":"最近完整月份账上利润和银行净流入差异原因","raw_user_query":"为什么最近完整月份账上利润和银行净流入差这么多？"}
+{"query":"2026年1月到2026年3月账上利润和银行净流入差异","raw_user_query":"为什么2026年第一季度利润和现金差这么多？"}
 ```
 
-Use the same short Python JSON-RPC driver pattern already present in `tests/scripts/claude_finance_final_answer.sh`, but print the full payload so `query_spec`, `finance_facts`, and `required_atoms` can be asserted. Expected: roster/ARAP/journal/revenue pairs preserve raw period/source/scope while keeping valid model entity hints; comparison has three facts; the range control preserves its dynamic cutoff.
+Use the same short Python JSON-RPC driver pattern already present in `tests/scripts/claude_finance_final_answer.sh`, but print the full payload so `query_spec`, `finance_facts`, and `required_atoms` can be asserted. Expected: roster/ARAP/journal/revenue pairs preserve raw period/source/scope while keeping valid model entity hints; comparison and explanation both publish three facts without moving the explanation headline; the range reconciliation control preserves `2026-01~2026-03`.
 
 Run the driver with the same `FINANCEQA_ENV_FILE` and
 `FINANCEQA_RULES_PATH` exported in Step 3 so the worktree binary uses the
@@ -627,13 +628,25 @@ Expected: version `2.2.58`; both actual service scopes are active.
 
 - [ ] **Step 5: Replay exact failed and control query/raw pairs on the production MCP path**
 
-Run the same six Task 6 JSON-RPC pairs through `/root/finance_qa/bin/financeqa serve` with the production env. Confirm structured fields, not only prose. A single-input direct query is an additional control, not evidence for the repaired merge boundary.
+Run the same seven Task 6 JSON-RPC pairs through the production MCP process,
+explicitly pointing the CLI at its protected env file:
+
+```bash
+ssh lzh 'cd /root/finance_qa && FINANCEQA_ENV_FILE=/root/finance_qa/.env ./bin/financeqa serve --skill SKILL.md --appendix docs/SKILL_APPENDIX_FULL.md'
+```
+
+Drive that stdin/stdout process with the same JSON-RPC helper used locally and
+confirm structured fields, not only prose. A single-input direct query is an
+additional control, not evidence for the repaired merge boundary.
 
 - [ ] **Step 6: Replay the OpenClaw true chain at least five times per failure family**
 
 The patrol CLI has no case/template selector, so do not present a selective
 patrol command that does not exist. Use the same local OpenClaw runner and
-safety flags as production for six exact controls, five fresh sessions each:
+`--require-tool` control as production for six exact controls, five fresh
+sessions each. The currently deployed runner has no `--forbid-tools` option,
+so put the prohibition in the patrol wrapper and fail the run unless the saved
+transcript contains only `finance-query` tool calls:
 
 ```bash
 ssh lzh 'bash -s' <<'REMOTE'
@@ -648,22 +661,99 @@ while IFS='|' read -r family question; do
   [ -n "$family" ] || continue
   for n in 1 2 3 4 5; do
     qf=$(mktemp)
-    printf '%s\n' "$question" >"$qf"
+    {
+      printf '%s\n' '[发布验收要求]'
+      printf '%s\n' '只能调用 `finance-query`；禁止调用 message、feishu、exec、edit、cron、gateway 或任何写入/投递动作。'
+      printf '%s\n' '调用后只回答用户原问题，不展示内部 JSON、工具过程或 final_answer。'
+      printf '\n[用户原问题]\n%s\n' "$question"
+    } >"$qf"
     sid="patrol-finance-release-${stamp}-${family}-${n}"
     node examples/runners/openclaw_local_runner.mjs \
       --question-file "$qf" --session-id "$sid" --thinking off --timeout 360 \
       --require-tool finance-query \
-      --forbid-tools message,feishu,exec,edit,cron,gateway \
       >"$out/${family}-${n}.json"
     rm -f "$qf"
-    session_id=$(jq -r '(.result // .) | .sessionId // .session_id // .meta.agentMeta.sessionId // empty' "$out/${family}-${n}.json")
-    test -n "$session_id"
-    session_file="/root/.openclaw/agents/main/sessions/$session_id.jsonl"
-    test -s "$session_file"
-    jq -se '[.[]|select(.message.role=="assistant")|.message.content[]?|select(.type=="toolCall" and .name=="finance-query")]|length>=1' "$session_file" >/dev/null
-    jq -s '[.[]|select(.message.role=="toolResult" and .message.toolName=="finance-query")]' "$session_file" >"$out/${family}-${n}.tool-results.json"
-    jq -e 'length >= 1' "$out/${family}-${n}.tool-results.json" >/dev/null
-    jq -er '(.result // .) as $r | ($r.answer // $r.final_answer // $r.output // ([$r.payloads[]?.text]|join("\n\n"))) | select(length>0)' "$out/${family}-${n}.json" >"$out/${family}-${n}.answer.txt"
+    python3 - \
+      "$out/${family}-${n}.json" \
+      /root/.openclaw/agents/main/sessions \
+      "$sid" \
+      "$out/${family}-${n}.tool-results.json" \
+      "$out/${family}-${n}.answer.txt" <<'PY'
+import json
+import pathlib
+import sys
+
+raw_path, session_dir, expected_sid, tool_out, answer_out = sys.argv[1:]
+raw = pathlib.Path(raw_path).read_text(encoding="utf-8")
+try:
+    payload = json.loads(raw)
+except json.JSONDecodeError:
+    decoder = json.JSONDecoder()
+    payload = None
+    start = raw.find("{")
+    while start >= 0:
+        try:
+            payload, _ = decoder.raw_decode(raw[start:])
+            break
+        except json.JSONDecodeError:
+            start = raw.find("{", start + 1)
+    if payload is None:
+        raise
+
+result = payload.get("result", payload) if isinstance(payload, dict) else {}
+meta = result.get("meta", {}) if isinstance(result, dict) else {}
+agent_meta = meta.get("agentMeta", {}) if isinstance(meta, dict) else {}
+session_id = (
+    result.get("sessionId")
+    or result.get("session_id")
+    or agent_meta.get("sessionId")
+    or expected_sid
+)
+session_path = pathlib.Path(session_dir, f"{session_id}.jsonl")
+if not session_path.is_file() or session_path.stat().st_size == 0:
+    raise SystemExit(f"missing session transcript: {session_path}")
+
+answer = ""
+for candidate in (
+    result.get("answer"),
+    result.get("final_answer"),
+    result.get("output"),
+):
+    if isinstance(candidate, str) and candidate.strip():
+        answer = candidate.strip()
+        break
+if not answer:
+    payloads = result.get("payloads", [])
+    answer = "\n\n".join(
+        item.get("text", "").strip()
+        for item in payloads
+        if isinstance(item, dict) and isinstance(item.get("text"), str) and item.get("text", "").strip()
+    )
+if not answer:
+    raise SystemExit("OpenClaw result has no visible answer")
+
+events = [json.loads(line) for line in session_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+tool_calls = []
+tool_results = []
+for event in events:
+    message = event.get("message", event) if isinstance(event, dict) else {}
+    if message.get("role") == "assistant":
+        content = message.get("content", [])
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "toolCall":
+                    tool_calls.append(item.get("name", ""))
+    if message.get("role") == "toolResult" and message.get("toolName") == "finance-query":
+        tool_results.append(event)
+
+if not tool_calls or any(name != "finance-query" for name in tool_calls):
+    raise SystemExit(f"unexpected tool calls: {tool_calls}")
+if not tool_results:
+    raise SystemExit("missing finance-query tool result")
+
+pathlib.Path(tool_out).write_text(json.dumps(tool_results, ensure_ascii=False, indent=2), encoding="utf-8")
+pathlib.Path(answer_out).write_text(answer + "\n", encoding="utf-8")
+PY
   done
 done <<'CASES'
 unpaid_roster|25年到26年未付款的项目都有哪些，对应的金额是多少？
