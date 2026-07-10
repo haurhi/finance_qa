@@ -193,6 +193,9 @@ func shouldUsePreciseBalanceQuestion(q string) bool {
 }
 
 func shouldUseCashOnHandBalanceQuestion(q string) bool {
+	if shouldUseReconciliation(q) {
+		return false
+	}
 	if !strings.Contains(q, "现金") {
 		return false
 	}

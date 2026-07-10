@@ -127,6 +127,16 @@ func TestQueryReconciliationAggregatesBookSummaryAcrossRequestedRange(t *testing
 	}
 }
 
+func TestReconciliationQuestionIsNotCashOnHandBalance(t *testing.T) {
+	question := "为什么2026年第一季度利润和现金差这么多？；补充识别：账上利润和银行净流入差异"
+	if !shouldUseReconciliation(question) {
+		t.Fatalf("question should retain reconciliation intent: %q", question)
+	}
+	if shouldUseCashOnHandBalanceQuestion(question) {
+		t.Fatalf("cash-on-hand balance must not capture reconciliation question: %q", question)
+	}
+}
+
 func TestLatestReconciliationUsesLatestCommonBookAndBankMonth(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "reconciliation-latest-common-month.sqlite")
 	db, err := sql.Open("sqlite", dbPath)
