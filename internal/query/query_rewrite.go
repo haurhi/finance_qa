@@ -214,17 +214,25 @@ func shouldUseExplicitFinancialAccountQuestion(q string) bool {
 
 // looksLikeBalanceSheetARAPQuestion detects company-level balance sheet AR/AP questions
 // like "从账上看，上个完整自然月的应收账款、应付账款和其他应付款分别有多少？".
-// It requires both a balance-sheet account term AND a balance-sheet context keyword so
-// that counterparty-specific questions like "XXX公司应付账款多少" still go through contract
-// dimension with financial fallback.
+// It requires a balance-sheet account term and either an explicit balance-sheet
+// source/context word or a multi-account balance comparison shape.
 func looksLikeBalanceSheetARAPQuestion(q string) bool {
-	if !containsAny(q, []string{"应收账款", "应付账款", "其他应付款", "应收票据", "应付票据", "预付账款", "其他应收款"}) {
+	accountTermCount := 0
+	for _, term := range []string{"应收账款", "应付账款", "其他应付款", "应收票据", "应付票据", "预付账款", "其他应收款"} {
+		if strings.Contains(q, term) {
+			accountTermCount++
+		}
+	}
+	if accountTermCount == 0 {
 		return false
 	}
-	return containsAny(q, []string{
+	if containsAny(q, []string{
 		"从账上看", "账上看", "官方余额表", "余额表", "科目余额", "资产负债表", "报表口径",
 		"期末余额", "期初余额", "发生额及余额",
-	})
+	}) {
+		return true
+	}
+	return accountTermCount >= 2 && containsAny(q, []string{"余额", "分别", "哪头", "更重", "合计"})
 }
 
 func detectBossScope(q, entity string) BossScope {

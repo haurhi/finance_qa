@@ -87,7 +87,7 @@ func shouldUseOfficialARAPQuestion(q string) bool {
 		"财务账", "会计账", "报表口径", "账上",
 		"序时账", "凭证",
 		"从账上看", "账上看", "官方余额表",
-	})
+	}) || looksLikeBalanceSheetARAPQuestion(q)
 }
 
 func shouldUseContractFirstARAP(q string) bool {
