@@ -96,6 +96,12 @@ func TestEffectiveFinanceQueryProtectsCompanyScopeAndContinuationSemantics(t *te
 			want:      []string{"最近完整月份", "净利润", "百度在线网络技术(北京)有限公司"},
 		},
 		{
+			name:      "continuation_with_entity_without_period_guard",
+			raw:       "百度这个客户还有多少没收回来？",
+			rewritten: "请重新查一下百度在线网络技术(北京)有限公司",
+			want:      []string{"百度这个客户", "没收回来", "百度在线网络技术(北京)有限公司"},
+		},
+		{
 			name:      "roster_structural_identifier",
 			raw:       "25年到26年未付款的项目都有哪些，对应的金额是多少？",
 			rewritten: "列出项目ID和对应金额",
@@ -113,6 +119,12 @@ func TestEffectiveFinanceQueryProtectsCompanyScopeAndContinuationSemantics(t *te
 			name:      "entity_specific_roster_control",
 			raw:       "百度未付款的项目都有哪些？",
 			rewritten: "百度在线网络技术(北京)有限公司",
+			want:      []string{"百度未付款的项目", "百度在线网络技术(北京)有限公司"},
+		},
+		{
+			name:      "entity_specific_roster_compact_rewrite",
+			raw:       "百度未付款的项目都有哪些？",
+			rewritten: "百度在线网络技术(北京)有限公司未付款项目明细",
 			want:      []string{"百度未付款的项目", "百度在线网络技术(北京)有限公司"},
 		},
 		{

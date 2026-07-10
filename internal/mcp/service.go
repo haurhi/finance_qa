@@ -57,6 +57,7 @@ var (
 	absoluteFinanceMonthChineseKey     = regexp.MustCompile(`(20\d{2})\s*年\s*(0?[1-9]|1[0-2])\s*月`)
 	absoluteFinanceMonthDashKey        = regexp.MustCompile(`(20\d{2})\s*[-/.]\s*(0?[1-9]|1[0-2])`)
 	specificFinanceSubjectPattern      = regexp.MustCompile(`[\p{Han}A-Za-z0-9_（）()·\-－]{2,}(?:合同|协议|项目)[\-－]?[A-Za-z0-9]+`)
+	specificFinanceOrganizationPattern = regexp.MustCompile(`[\p{Han}A-Za-z0-9_（）()·\-－]{4,}?(?:有限责任公司|股份有限公司|有限公司|集团公司|集团)`)
 )
 
 // ServiceConfig contains the business configuration shared by MCP transports.
@@ -175,8 +176,10 @@ func looksLikeFinanceQueryText(text string) bool {
 }
 
 func shouldPreferRawFinanceSemantics(rawUser, rewritten string) bool {
-	return isFinanceRetryOrContinuation(rewritten) ||
-		isCompanyProjectRosterQuery(rawUser) ||
+	if _, ok := financeContinuationRemainder(rewritten); ok {
+		return true
+	}
+	return isCompanyProjectRosterQuery(rawUser) ||
 		missingProtectedFinanceTerms(rawUser, rewritten) ||
 		lostSpecificFinanceSubject(rawUser, rewritten) ||
 		addedAbsoluteFinanceMonthToRelativePeriod(rawUser, rewritten) ||
@@ -184,10 +187,7 @@ func shouldPreferRawFinanceSemantics(rawUser, rewritten string) bool {
 		lostAbsoluteFinanceMonth(rawUser, rewritten)
 }
 
-func isFinanceRetryOrContinuation(text string) bool {
-	if looksLikeFinanceQueryText(text) {
-		return false
-	}
+func financeContinuationRemainder(text string) (string, bool) {
 	normalized := strings.Trim(strings.TrimSpace(text), "，,。.！!？?；;：:")
 	matched := false
 	for _, term := range financeRetryOrContinuationTerms {
@@ -197,12 +197,12 @@ func isFinanceRetryOrContinuation(text string) bool {
 		}
 	}
 	if !matched {
-		return false
+		return "", false
 	}
 	for _, filler := range financeContinuationFillerTerms {
 		normalized = strings.ReplaceAll(normalized, filler, "")
 	}
-	return strings.Trim(strings.TrimSpace(normalized), "，,。.！!？?；;：:") == ""
+	return strings.Trim(strings.TrimSpace(normalized), "，,。.！!？?；;：:"), true
 }
 
 func isCompanyProjectRosterQuery(text string) bool {
@@ -311,8 +311,11 @@ func mergeProtectedFinanceQuery(rawUser, rewritten string) string {
 	if rawText == "" || hint == "" || rawText == hint {
 		return rawText
 	}
-	if isFinanceRetryOrContinuation(hint) {
-		return rawText
+	if remainder, ok := financeContinuationRemainder(hint); ok {
+		if remainder == "" {
+			return rawText
+		}
+		hint = remainder
 	}
 	if isCompanyProjectRosterQuery(rawText) {
 		subjects := specificFinanceRosterSubjectCandidates(hint)
@@ -341,9 +344,10 @@ func specificFinanceRosterSubjectCandidates(text string) []string {
 			validated = append(validated, subject)
 		}
 	}
-	for _, field := range strings.Fields(text) {
-		candidate := strings.Trim(field, "，,。.！!？?；;：:")
-		if len([]rune(candidate)) < 4 || !hasFinanceOrganizationSuffix(candidate) {
+	organizationText := stripFinancePeriodPhrases(text)
+	for _, match := range specificFinanceOrganizationPattern.FindAllString(organizationText, -1) {
+		candidate := strings.Trim(match, "，,。.！!？?；;：:")
+		if len([]rune(candidate)) < 4 {
 			continue
 		}
 		key := normalizeFinanceSubjectText(candidate)
@@ -367,15 +371,6 @@ func hasSpecificFinanceRosterIdentifier(subject string) bool {
 			return false
 		}
 		return strings.HasPrefix(suffix, "-") || strings.HasPrefix(suffix, "－") || strings.ContainsAny(suffix, "0123456789")
-	}
-	return false
-}
-
-func hasFinanceOrganizationSuffix(text string) bool {
-	for _, suffix := range []string{"有限责任公司", "股份有限公司", "有限公司", "集团公司", "集团"} {
-		if strings.HasSuffix(text, suffix) {
-			return true
-		}
 	}
 	return false
 }
