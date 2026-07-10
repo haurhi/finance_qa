@@ -8,6 +8,21 @@ import (
 
 var financeFactSourceDocPattern = regexp.MustCompile(`《[^》]+》(?:的【[^】]+】)?`)
 
+type financeMetricAtom struct {
+	Label string
+	Value float64
+}
+
+func financeMetricRequiredAtoms(metrics ...financeMetricAtom) []string {
+	atoms := make([]string, 0, len(metrics))
+	for _, metric := range metrics {
+		if label := strings.TrimSpace(metric.Label); label != "" {
+			atoms = append(atoms, fmt.Sprintf("%s：%.2f 元", label, metric.Value))
+		}
+	}
+	return atoms
+}
+
 func buildFinanceFacts(spec QuerySpec, data map[string]any) map[string]any {
 	if data == nil {
 		return nil

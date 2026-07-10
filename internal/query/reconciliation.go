@@ -9,7 +9,7 @@ import (
 )
 
 func shouldUseReconciliation(q string) bool {
-	if containsAny(q, []string{"对比", "比较", "差多少", "相差", "差额"}) &&
+	if containsAny(q, []string{"对比", "比较", "差多少", "差了多少", "相差", "差额"}) &&
 		containsAny(q, []string{"银行", "银行卡", "银行流水", "现金", "现金流", "净流入", "净流出", "净现金流"}) &&
 		containsAny(q, []string{"账上", "账面", "序时账", "会计账", "利润", "净利润", "净利"}) {
 		return true
@@ -77,10 +77,11 @@ func (e *Engine) queryReconciliation(question, from, to string) Result {
 
 	msg := e.composeBossReconciliationMessage(periodLabel, book, bookSource, cash, bridge, highlights)
 	data := buildReconciliationResultData(periodLabel, book, bookSource, cash, highlights, bridgeMap)
-	if shouldExposeNominalReconciliationDifference(question) {
-		nominalDifference := reconciliationNominalDifference(book, cash)
+	nominalDifference := reconciliationNominalDifference(book, cash)
+	annotateReconciliationFacts(data, book, cash, nominalDifference)
+	if shouldPromoteNominalReconciliationDifference(question) {
 		msg = withReconciliationNominalDifferenceLine(msg, book, cash, nominalDifference)
-		annotateReconciliationNominalDifference(data, book, cash, nominalDifference)
+		promoteReconciliationDifferenceHeadline(data, nominalDifference)
 	}
 	if adjusted {
 		data["period_adjusted"] = true

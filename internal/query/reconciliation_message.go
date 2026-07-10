@@ -64,8 +64,11 @@ func shouldAppendReconciliationHighlights(cash *accounting.CashPerspective, brid
 	return math.Abs(reconciliationResidualGap(cash, bridge)) > 0.01
 }
 
-func shouldExposeNominalReconciliationDifference(question string) bool {
-	return containsAny(question, []string{"差多少", "相差", "差额", "差异"})
+func shouldPromoteNominalReconciliationDifference(question string) bool {
+	if containsAny(question, []string{"为什么", "怎么回事"}) {
+		return false
+	}
+	return containsAny(question, []string{"对比", "比较", "差多少", "差了多少", "相差", "差额", "差异"})
 }
 
 func reconciliationNominalDifference(book monthlyBookView, cash *accounting.CashPerspective) float64 {

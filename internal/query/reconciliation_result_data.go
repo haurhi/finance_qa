@@ -1,8 +1,6 @@
 package query
 
 import (
-	"fmt"
-
 	"financeqa/internal/accounting"
 )
 
@@ -82,20 +80,19 @@ func buildReconciliationResultData(period string, book monthlyBookView, bookSour
 	}
 }
 
-func annotateReconciliationNominalDifference(data map[string]any, book monthlyBookView, cash *accounting.CashPerspective, nominalDifference float64) {
+func annotateReconciliationFacts(data map[string]any, book monthlyBookView, cash *accounting.CashPerspective, nominalDifference float64) {
 	if data == nil || cash == nil {
 		return
 	}
 	bookProfit := round2(book.NetProfit)
 	bankNetInflow := round2(cash.Net)
-	data["headline_metric"] = "账上净利润-银行净流入名义差额"
-	data["headline_amount"] = nominalDifference
 	data["metrics"] = map[string]any{
 		"账上净利润":       bookProfit,
 		"银行净流入":       bankNetInflow,
 		"差异金额":        nominalDifference,
 		"名义差额":        nominalDifference,
 		"账上净利润-银行净流入": nominalDifference,
+		"名义差额（账上净利润-银行净流入）": nominalDifference,
 	}
 	data["cash_profit_reconciliation"] = map[string]any{
 		"period":            data["period"],
@@ -110,14 +107,22 @@ func annotateReconciliationNominalDifference(data map[string]any, book monthlyBo
 		summary["nominal_difference"] = nominalDifference
 	}
 	data["finance_facts"] = map[string]any{
-		"required_atoms": []string{
-			fmt.Sprintf("银行净流入：%.2f 元", bankNetInflow),
-			fmt.Sprintf("账上净利润：%.2f 元", bookProfit),
-			fmt.Sprintf("差异金额：%.2f 元", nominalDifference),
-		},
+		"required_atoms": financeMetricRequiredAtoms(
+			financeMetricAtom{Label: "银行净流入", Value: bankNetInflow},
+			financeMetricAtom{Label: "账上净利润", Value: bookProfit},
+			financeMetricAtom{Label: "名义差额（账上净利润-银行净流入）", Value: nominalDifference},
+		),
 	}
 	data["explanation_hints"] = []string{
 		"名义差额按账上净利润减银行净流入计算。",
 		"账上利润和银行流水不是同一口径，差额只作对账入口。",
 	}
+}
+
+func promoteReconciliationDifferenceHeadline(data map[string]any, nominalDifference float64) {
+	if data == nil {
+		return
+	}
+	data["headline_metric"] = "账上净利润-银行净流入名义差额"
+	data["headline_amount"] = nominalDifference
 }

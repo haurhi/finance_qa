@@ -11,6 +11,51 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+func newReconciliationComparisonEngine(t *testing.T) *Engine {
+	t.Helper()
+
+	dbPath := filepath.Join(t.TempDir(), "reconciliation-comparison.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	stmts := []string{
+		`CREATE TABLE income_statement (company TEXT, period TEXT, item_name TEXT, current_amount REAL, cumulative_amount REAL)`,
+		`CREATE TABLE bank_statement (company TEXT, transaction_date TEXT, credit_amount REAL, debit_amount REAL, counterparty_name TEXT, summary TEXT)`,
+		`CREATE TABLE journal (company TEXT, period TEXT, voucher_date TEXT, voucher_no TEXT, account_code TEXT, account_name TEXT, summary TEXT, direction TEXT, amount REAL, debit_amount REAL, credit_amount REAL, counterparty TEXT)`,
+		`CREATE TABLE balance_detail (company TEXT, year INTEGER, period TEXT, account_code TEXT, account_name TEXT, opening_debit REAL, opening_credit REAL, current_debit REAL, current_credit REAL, closing_debit REAL, closing_credit REAL)`,
+		`CREATE TABLE balance_sheet (company TEXT, period TEXT, account_code TEXT, account_name TEXT, opening_balance REAL, closing_balance REAL)`,
+		`CREATE TABLE fin_contracts (contract_id TEXT PRIMARY KEY, customer_name TEXT, contract_content TEXT)`,
+		`CREATE TABLE fin_fund_income (id INTEGER PRIMARY KEY AUTOINCREMENT, contract_id TEXT, year_month TEXT, source_report_type TEXT, source_sheet_name TEXT, settlement_amount REAL, received_amount REAL, is_invoiced TEXT, invoice_amount REAL)`,
+		`INSERT INTO income_statement(company, period, item_name, current_amount, cumulative_amount) VALUES
+		 ('测试公司','2026-03','一、营业收入',1000,3000),
+		 ('测试公司','2026-03','五、净利润',200,600)`,
+		`INSERT INTO journal(company, period, voucher_date, voucher_no, account_code, account_name, summary, direction, amount, debit_amount, credit_amount, counterparty) VALUES
+		 ('测试公司','2026-03','2026-03-31','记-0001','600101','技术服务费','确认3月收入','贷',1000,0,1000,'客户A'),
+		 ('测试公司','2026-03','2026-03-31','记-0002','640101','营业成本','确认3月成本','借',800,800,0,'供应商A')`,
+		`INSERT INTO bank_statement(company, transaction_date, credit_amount, debit_amount, counterparty_name, summary) VALUES
+		 ('测试公司','2026-03-20',650,0,'客户A','3月回款'),
+		 ('测试公司','2026-03-25',0,900,'供应商A','3月付款')`,
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-JUNE','六月客户','六月项目')`,
+		`INSERT INTO fin_fund_income(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, received_amount, is_invoiced, invoice_amount)
+		 VALUES ('C-JUNE','2026-06','contract_fund_income','26年6月收入明细',100,100,'是',100)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec stmt failed: %v", err)
+		}
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	t.Cleanup(func() { _ = engine.Close() })
+	return engine
+}
+
 func TestQueryReconciliationAggregatesBookSummaryAcrossRequestedRange(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "reconciliation-range.sqlite")
 	db, err := sql.Open("sqlite", dbPath)
@@ -149,45 +194,7 @@ func TestLatestReconciliationUsesLatestCommonBookAndBankMonth(t *testing.T) {
 }
 
 func TestCompareBookProfitAndBankNetInflowUsesReconciliationRoute(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "reconciliation-compare-phrase.sqlite")
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	defer db.Close()
-
-	stmts := []string{
-		`CREATE TABLE income_statement (company TEXT, period TEXT, item_name TEXT, current_amount REAL, cumulative_amount REAL)`,
-		`CREATE TABLE bank_statement (company TEXT, transaction_date TEXT, credit_amount REAL, debit_amount REAL, counterparty_name TEXT, summary TEXT)`,
-		`CREATE TABLE journal (company TEXT, period TEXT, voucher_date TEXT, voucher_no TEXT, account_code TEXT, account_name TEXT, summary TEXT, direction TEXT, amount REAL, debit_amount REAL, credit_amount REAL, counterparty TEXT)`,
-		`CREATE TABLE balance_detail (company TEXT, year INTEGER, period TEXT, account_code TEXT, account_name TEXT, opening_debit REAL, opening_credit REAL, current_debit REAL, current_credit REAL, closing_debit REAL, closing_credit REAL)`,
-		`CREATE TABLE balance_sheet (company TEXT, period TEXT, account_code TEXT, account_name TEXT, opening_balance REAL, closing_balance REAL)`,
-		`CREATE TABLE fin_contracts (contract_id TEXT PRIMARY KEY, customer_name TEXT, contract_content TEXT)`,
-		`CREATE TABLE fin_fund_income (id INTEGER PRIMARY KEY AUTOINCREMENT, contract_id TEXT, year_month TEXT, source_report_type TEXT, source_sheet_name TEXT, settlement_amount REAL, received_amount REAL, is_invoiced TEXT, invoice_amount REAL)`,
-		`INSERT INTO income_statement(company, period, item_name, current_amount, cumulative_amount) VALUES
-		 ('测试公司','2026-03','一、营业收入',1000,3000),
-		 ('测试公司','2026-03','五、净利润',200,600)`,
-		`INSERT INTO journal(company, period, voucher_date, voucher_no, account_code, account_name, summary, direction, amount, debit_amount, credit_amount, counterparty) VALUES
-		 ('测试公司','2026-03','2026-03-31','记-0001','600101','技术服务费','确认3月收入','贷',1000,0,1000,'客户A'),
-		 ('测试公司','2026-03','2026-03-31','记-0002','640101','营业成本','确认3月成本','借',800,800,0,'供应商A')`,
-		`INSERT INTO bank_statement(company, transaction_date, credit_amount, debit_amount, counterparty_name, summary) VALUES
-		 ('测试公司','2026-03-20',650,0,'客户A','3月回款'),
-		 ('测试公司','2026-03-25',0,900,'供应商A','3月付款')`,
-		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-JUNE','六月客户','六月项目')`,
-		`INSERT INTO fin_fund_income(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, received_amount, is_invoiced, invoice_amount)
-		 VALUES ('C-JUNE','2026-06','contract_fund_income','26年6月收入明细',100,100,'是',100)`,
-	}
-	for _, stmt := range stmts {
-		if _, err := db.Exec(stmt); err != nil {
-			t.Fatalf("exec stmt failed: %v", err)
-		}
-	}
-
-	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
-	if err != nil {
-		t.Fatalf("new engine: %v", err)
-	}
-	defer engine.Close()
+	engine := newReconciliationComparisonEngine(t)
 
 	res := engine.Query("对比一下最近完整月份账上利润和银行流水净流入。")
 	if !res.Success {
@@ -222,41 +229,133 @@ func TestCompareBookProfitAndBankNetInflowUsesReconciliationRoute(t *testing.T) 
 	}
 }
 
+func TestReconciliationAlwaysPublishesThreeFacts(t *testing.T) {
+	const (
+		bankNetFlowLabel   = "银行净流入"
+		bookNetProfitLabel = "账上净利润"
+		nominalDifference  = "名义差额（账上净利润-银行净流入）"
+		differenceHeadline = "账上净利润-银行净流入名义差额"
+	)
+
+	tests := []struct {
+		name    string
+		query   string
+		promote bool
+	}{
+		{name: "compare", query: "对比一下最近完整月份账上利润和银行流水净流入。", promote: true},
+		{name: "compare synonym", query: "比较最近完整月份账上利润和银行流水净流入。", promote: true},
+		{name: "difference amount", query: "最近完整月份账上利润和银行流水净流入差了多少？", promote: true},
+		{name: "explanation", query: "为什么最近完整月份账上利润和银行净流入差这么多？", promote: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			engine := newReconciliationComparisonEngine(t)
+			res := engine.Query(tc.query)
+			if !res.Success {
+				t.Fatalf("query failed: message=%s data=%+v", res.Message, res.Data)
+			}
+
+			spec, ok := res.Data["query_spec"].(map[string]any)
+			if !ok || spec["query_family"] != QueryFamilyReconciliation {
+				t.Errorf("query_spec.query_family = %#v, want reconciliation; data=%+v", spec, res.Data)
+			}
+			if got := anyToString(res.Data["business_basis"]); got != "账上利润与银行流水双口径对账" {
+				t.Errorf("business_basis = %q, want reconciliation result", got)
+			}
+
+			facts, ok := res.Data["finance_facts"].(map[string]any)
+			if !ok {
+				t.Fatalf("finance_facts missing: data=%+v", res.Data)
+			}
+			metrics, ok := facts["metrics"].(map[string]any)
+			if !ok {
+				t.Errorf("finance_facts.metrics missing: facts=%+v", facts)
+				metrics = map[string]any{}
+			}
+			for label, want := range map[string]float64{
+				bankNetFlowLabel:   -250,
+				bookNetProfitLabel: 200,
+				nominalDifference:  450,
+			} {
+				if got := anyToFloat64(metrics[label]); got != want {
+					t.Errorf("finance_facts.metrics[%q] = %v, want %v; metrics=%+v", label, got, want, metrics)
+				}
+			}
+
+			requiredAtoms := anySourceStringSlice(facts["required_atoms"])
+			wantRequiredAtoms := []string{
+				bankNetFlowLabel + "：-250.00 元",
+				bookNetProfitLabel + "：200.00 元",
+				nominalDifference + "：450.00 元",
+			}
+			if len(requiredAtoms) < len(wantRequiredAtoms) {
+				t.Errorf("finance_facts.required_atoms = %#v, want ordered reconciliation facts %#v", requiredAtoms, wantRequiredAtoms)
+			} else {
+				for i, want := range wantRequiredAtoms {
+					if got := requiredAtoms[i]; got != want {
+						t.Errorf("finance_facts.required_atoms[%d] = %q, want %q; atoms=%#v", i, got, want, requiredAtoms)
+					}
+				}
+			}
+
+			reconcileFacts, ok := res.Data["cash_profit_reconciliation"].(map[string]any)
+			if !ok {
+				t.Errorf("cash_profit_reconciliation missing: data=%+v", res.Data)
+			} else {
+				for key, want := range map[string]float64{
+					"bank_net_flow":     -250,
+					"book_net_profit":   200,
+					"difference_amount": 450,
+				} {
+					if got := anyToFloat64(reconcileFacts[key]); got != want {
+						t.Errorf("cash_profit_reconciliation[%s] = %v, want %v; facts=%+v", key, got, want, reconcileFacts)
+					}
+				}
+			}
+
+			differenceSummary, ok := res.Data["difference_summary"].(map[string]any)
+			if !ok || anyToFloat64(differenceSummary["nominal_difference"]) != 450 {
+				t.Errorf("difference_summary.nominal_difference = %v, want 450; summary=%+v", differenceSummary["nominal_difference"], differenceSummary)
+			}
+			hints := strings.Join(anySourceStringSlice(facts["explanation_hints"]), "\n")
+			if !strings.Contains(hints, "不是同一口径") || !strings.Contains(hints, "只作对账入口") {
+				t.Errorf("finance_facts.explanation_hints must preserve basis and nominal-difference caveats: %q", hints)
+			}
+
+			if tc.promote {
+				if got := anyToString(facts["headline_metric"]); got != differenceHeadline {
+					t.Errorf("finance_facts.headline_metric = %q, want %q", got, differenceHeadline)
+				}
+				if got := anyToFloat64(facts["headline_amount"]); got != 450 {
+					t.Errorf("finance_facts.headline_amount = %v, want 450", got)
+				}
+				if !strings.Contains(res.Message, "按名义差额看") || !strings.Contains(res.Message, "450.00 元") {
+					t.Errorf("quantitative reconciliation message should promote nominal difference, got: %s", res.Message)
+				}
+			} else {
+				if _, ok := res.Data["headline_metric"]; ok {
+					t.Errorf("explanation reconciliation must keep narrative headline, data=%+v", res.Data)
+				}
+				if _, ok := res.Data["headline_amount"]; ok {
+					t.Errorf("explanation reconciliation must keep narrative headline amount, data=%+v", res.Data)
+				}
+				if got := anyToString(facts["headline_metric"]); got == differenceHeadline {
+					t.Errorf("explanation reconciliation must not promote difference headline: facts=%+v", facts)
+				}
+				if got := anyToFloat64(facts["headline_amount"]); got != -250 {
+					t.Errorf("explanation reconciliation headline_amount = %v, want existing narrative cash amount -250", got)
+				}
+				if strings.Contains(res.Message, "按名义差额看") || !strings.Contains(res.Message, "我拆成两层给你看") {
+					t.Errorf("explanation reconciliation must keep narrative message, got: %s", res.Message)
+				}
+			}
+		})
+	}
+}
+
 func TestCompareBookProfitAndBankNetInflowStatesNominalDifference(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "reconciliation-difference-phrase.sqlite")
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	defer db.Close()
-
-	stmts := []string{
-		`CREATE TABLE income_statement (company TEXT, period TEXT, item_name TEXT, current_amount REAL, cumulative_amount REAL)`,
-		`CREATE TABLE bank_statement (company TEXT, transaction_date TEXT, credit_amount REAL, debit_amount REAL, counterparty_name TEXT, summary TEXT)`,
-		`CREATE TABLE journal (company TEXT, period TEXT, voucher_date TEXT, voucher_no TEXT, account_code TEXT, account_name TEXT, summary TEXT, direction TEXT, amount REAL, debit_amount REAL, credit_amount REAL, counterparty TEXT)`,
-		`CREATE TABLE balance_detail (company TEXT, year INTEGER, period TEXT, account_code TEXT, account_name TEXT, opening_debit REAL, opening_credit REAL, current_debit REAL, current_credit REAL, closing_debit REAL, closing_credit REAL)`,
-		`CREATE TABLE balance_sheet (company TEXT, period TEXT, account_code TEXT, account_name TEXT, opening_balance REAL, closing_balance REAL)`,
-		`INSERT INTO income_statement(company, period, item_name, current_amount, cumulative_amount) VALUES
-		 ('测试公司','2026-03','一、营业收入',1000,3000),
-		 ('测试公司','2026-03','五、净利润',200,600)`,
-		`INSERT INTO journal(company, period, voucher_date, voucher_no, account_code, account_name, summary, direction, amount, debit_amount, credit_amount, counterparty) VALUES
-		 ('测试公司','2026-03','2026-03-31','记-0001','600101','技术服务费','确认3月收入','贷',1000,0,1000,'客户A'),
-		 ('测试公司','2026-03','2026-03-31','记-0002','640101','营业成本','确认3月成本','借',800,800,0,'供应商A')`,
-		`INSERT INTO bank_statement(company, transaction_date, credit_amount, debit_amount, counterparty_name, summary) VALUES
-		 ('测试公司','2026-03-20',650,0,'客户A','3月回款'),
-		 ('测试公司','2026-03-25',0,900,'供应商A','3月付款')`,
-	}
-	for _, stmt := range stmts {
-		if _, err := db.Exec(stmt); err != nil {
-			t.Fatalf("exec stmt failed: %v", err)
-		}
-	}
-
-	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
-	if err != nil {
-		t.Fatalf("new engine: %v", err)
-	}
-	defer engine.Close()
+	engine := newReconciliationComparisonEngine(t)
 
 	res := engine.Query("上个月银行净流入和账上净利润差多少？")
 	if !res.Success {
@@ -300,7 +399,7 @@ func TestCompareBookProfitAndBankNetInflowStatesNominalDifference(t *testing.T) 
 	for _, want := range []string{
 		"银行净流入：-250.00 元",
 		"账上净利润：200.00 元",
-		"差异金额：450.00 元",
+		"名义差额（账上净利润-银行净流入）：450.00 元",
 	} {
 		if !containsString(requiredAtoms, want) {
 			t.Fatalf("finance_facts.required_atoms missing %q: %#v", want, requiredAtoms)
