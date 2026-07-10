@@ -39,6 +39,10 @@ var financeRetryOrContinuationTerms = []string{
 	"继续", "接着", "再算一次", "重新算", "重算", "再查一次", "重新查",
 }
 
+var financeContinuationFillerTerms = []string{
+	"请", "一下", "吧", "麻烦", "帮我",
+}
+
 var projectRosterMetricTerms = []string{
 	"应付", "应收", "未付款", "未回款",
 }
@@ -185,7 +189,20 @@ func isFinanceRetryOrContinuation(text string) bool {
 		return false
 	}
 	normalized := strings.Trim(strings.TrimSpace(text), "，,。.！!？?；;：:")
-	return containsAnyText(normalized, financeRetryOrContinuationTerms)
+	matched := false
+	for _, term := range financeRetryOrContinuationTerms {
+		if strings.Contains(normalized, term) {
+			matched = true
+			normalized = strings.ReplaceAll(normalized, term, "")
+		}
+	}
+	if !matched {
+		return false
+	}
+	for _, filler := range financeContinuationFillerTerms {
+		normalized = strings.ReplaceAll(normalized, filler, "")
+	}
+	return strings.Trim(strings.TrimSpace(normalized), "，,。.！!？?；;：:") == ""
 }
 
 func isCompanyProjectRosterQuery(text string) bool {
@@ -315,13 +332,52 @@ func mergeProtectedFinanceQuery(rawUser, rewritten string) string {
 
 func specificFinanceRosterSubjectCandidates(text string) []string {
 	all := specificFinanceSubjectCandidates(text)
-	validated := make([]string, 0, len(all))
+	validated := make([]string, 0, len(all)+1)
+	seen := map[string]bool{}
 	for _, subject := range all {
-		if strings.ContainsAny(subject, "-－0123456789") {
+		if hasSpecificFinanceRosterIdentifier(subject) {
+			key := normalizeFinanceSubjectText(subject)
+			seen[key] = true
 			validated = append(validated, subject)
 		}
 	}
+	for _, field := range strings.Fields(text) {
+		candidate := strings.Trim(field, "，,。.！!？?；;：:")
+		if len([]rune(candidate)) < 4 || !hasFinanceOrganizationSuffix(candidate) {
+			continue
+		}
+		key := normalizeFinanceSubjectText(candidate)
+		if !seen[key] {
+			seen[key] = true
+			validated = append(validated, candidate)
+		}
+	}
 	return validated
+}
+
+func hasSpecificFinanceRosterIdentifier(subject string) bool {
+	for _, marker := range []string{"合同", "协议", "项目"} {
+		idx := strings.LastIndex(subject, marker)
+		if idx < 0 {
+			continue
+		}
+		suffix := strings.TrimSpace(subject[idx+len(marker):])
+		upperSuffix := strings.ToUpper(strings.TrimLeft(suffix, "-－"))
+		if strings.HasPrefix(upperSuffix, "ID") {
+			return false
+		}
+		return strings.HasPrefix(suffix, "-") || strings.HasPrefix(suffix, "－") || strings.ContainsAny(suffix, "0123456789")
+	}
+	return false
+}
+
+func hasFinanceOrganizationSuffix(text string) bool {
+	for _, suffix := range []string{"有限责任公司", "股份有限公司", "有限公司", "集团公司", "集团"} {
+		if strings.HasSuffix(text, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func stripFinancePeriodPhrases(text string) string {

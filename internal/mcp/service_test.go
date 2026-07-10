@@ -90,11 +90,30 @@ func TestEffectiveFinanceQueryProtectsCompanyScopeAndContinuationSemantics(t *te
 			forbid:    []string{"请重新查一下", "补充识别："},
 		},
 		{
+			name:      "continuation_with_entity_hint",
+			raw:       "最近完整月份净利润是多少？",
+			rewritten: "请重新查一下百度在线网络技术(北京)有限公司",
+			want:      []string{"最近完整月份", "净利润", "百度在线网络技术(北京)有限公司"},
+		},
+		{
 			name:      "roster_structural_identifier",
 			raw:       "25年到26年未付款的项目都有哪些，对应的金额是多少？",
 			rewritten: "列出项目ID和对应金额",
 			want:      []string{"25年到26年", "都有哪些", "金额"},
 			forbid:    []string{"项目ID", "补充识别："},
+		},
+		{
+			name:      "roster_structural_identifier_with_years",
+			raw:       "25年到26年未付款的项目都有哪些，对应的金额是多少？",
+			rewritten: "2025年到2026年列出项目ID和对应金额",
+			want:      []string{"25年到26年", "都有哪些", "金额"},
+			forbid:    []string{"项目ID", "补充识别："},
+		},
+		{
+			name:      "entity_specific_roster_control",
+			raw:       "百度未付款的项目都有哪些？",
+			rewritten: "百度在线网络技术(北京)有限公司",
+			want:      []string{"百度未付款的项目", "百度在线网络技术(北京)有限公司"},
 		},
 		{
 			name:      "specific_entity_hint_control",
