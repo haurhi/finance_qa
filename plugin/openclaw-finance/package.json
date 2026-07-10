@@ -1,6 +1,6 @@
 {
   "name": "openclaw-finance",
-  "version": "2.2.60",
+  "version": "2.2.61",
   "type": "module",
   "main": "dist/index.esm.js",
   "openclaw": {

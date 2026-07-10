@@ -596,7 +596,8 @@ test("finance-query can recover the captured patrol raw question when execute la
   await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
     const staleBankQuestion = "银行卡上，上个完整自然月净现金流是多少？";
     const staleRevenueQuestion = "收入表中最新月份项目结算营收是多少？";
-    const currentQuestion = "银行卡上看，上个完整月的净现金流是多少？";
+    const currentQuestion = "老板，银行卡上看，上个完整月的净现金流是多少？";
+    const modelRawQuestion = "银行卡上看，上个完整月的净现金流是多少？";
     const patrolPrompt = [
       "[巡检要求]",
       "这是一条只读巡检请求。回答前必须先调用 `finance-query` 获取最新事实。",
@@ -620,7 +621,7 @@ test("finance-query can recover the captured patrol raw question when execute la
 
     await tools.get("finance-query").execute("call-current-patrol-query", {
       query: "2026年6月银行卡净现金流",
-      raw_user_query: currentQuestion
+      raw_user_query: modelRawQuestion
     });
 
     const args = toolCalls.at(-1).arguments;

@@ -516,6 +516,19 @@ function financeQuestionText(value) {
   return financeOriginalQuestionFromWrapper(value) || userVisibleText(value);
 }
 
+function comparableFinanceQuestionText(value) {
+  return financeQuestionText(value)
+    .replace(/^(老板|老大|请|麻烦|帮我)[，,\s]*/g, "")
+    .replace(/[ \t\n\r，,。？?！!；;：:]/g, "")
+    .trim();
+}
+
+function sameFinanceQuestionText(a, b) {
+  const left = comparableFinanceQuestionText(a);
+  const right = comparableFinanceQuestionText(b);
+  return !!left && !!right && left === right;
+}
+
 function messageContentText(content) {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -1031,7 +1044,7 @@ function takeLatestFinanceQuestionForTool(ctx, modelRawQuestion = "") {
   const pending = [...latestFinanceQuestionBySession.entries()];
   const modelRaw = financeQuestionText(modelRawQuestion);
   if (modelRaw) {
-    const matches = pending.filter(([, question]) => question === modelRaw);
+    const matches = pending.filter(([, question]) => sameFinanceQuestionText(question, modelRaw));
     if (matches.length === 1) {
       const [key, question] = matches[0];
       latestFinanceQuestionBySession.delete(key);
