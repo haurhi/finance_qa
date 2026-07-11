@@ -968,6 +968,60 @@ func TestSupplierProjectPayableRangeToLastCompleteMonthUsesCostTableBusinessCuto
 	}
 }
 
+func TestSupplierPrefixedProjectCostPayableUsesContractDimensionBeforeBankPaymentStats(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	stmts := []string{
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-DOG-001','南京聪明狗网络技术有限公司','聪明狗推广服务')`,
+		`INSERT INTO fin_cost_settlements(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, paid_amount, is_invoiced, invoice_amount) VALUES
+		 ('C-DOG-001','2025-10','contract_revenue_cost','成本-月度结算',100,30,'是',100),
+		 ('C-DOG-001','2026-06','contract_revenue_cost','成本-月度结算',300,100,'是',300)`,
+		`INSERT INTO bank_statement(company, transaction_date, transaction_time, transaction_type, debit_amount, credit_amount, balance, summary, counterparty_name, counterparty_account) VALUES
+		 ('测试公司','2025-10-15','','转账',9000,0,0,'供应商付款','其他供应商',''),
+		 ('测试公司','2026-06-20','','转账',3000,0,0,'供应商付款','另一供应商','')`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec stmt failed: %v\n%s", err, stmt)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	question := "从项目成本口径看，供应商南京聪明狗网络技术有限公司从2025年10月到上一个完整自然月月底还有多少未付款？"
+	route := engine.resolveQueryRouting(question)
+	if route.spec.QueryFamily != QueryFamilyContractDimension || !route.spec.NeedsContractDimension {
+		t.Fatalf("route family=%s needs_dimension=%t, want supplier project payable contract dimension; spec=%+v", route.spec.QueryFamily, route.spec.NeedsContractDimension, route.spec)
+	}
+
+	res := engine.Query(question)
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["entity"]; got != "南京聪明狗网络技术有限公司" {
+		t.Fatalf("entity = %v, want supplier entity; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := anyToFloat64(res.Data["total"]); got != 270 {
+		t.Fatalf("total = %v, want supplier project payable 270 not bank payment stats; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := res.Data["period"]; got != "2025-10~2026-06" {
+		t.Fatalf("period = %v, want requested project-cost range; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if sourceTables := anySourceStringSlice(res.Data["source_tables"]); containsString(sourceTables, "bank_statement") {
+		t.Fatalf("source_tables = %#v, want project cost source not bank payment stats", sourceTables)
+	}
+}
+
 func TestSupplierProjectPayableRangeToLastCompleteMonthUsesDataMonthAnchorWithoutAsOf(t *testing.T) {
 	dbPath := buildContractARAPPriorityDB(t)
 	db, err := sql.Open("sqlite", dbPath)
@@ -1063,6 +1117,56 @@ func TestContractContentExactMentionBeatsShortCustomerAlias(t *testing.T) {
 	}
 }
 
+func TestProjectCostNamedContractPayableUsesSingleContractAsPrimary(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	stmts := []string{
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-JD-PROMO','南京众信数通智能科技有限公司','推广数据合同-京东')`,
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-JD-OTHER','北京欧特欧国际咨询有限公司','产品服务协议-京东')`,
+		`INSERT INTO fin_cost_settlements(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, paid_amount, is_invoiced, invoice_amount) VALUES
+		 ('C-JD-PROMO','2025-10','contract_revenue_cost','成本-月度结算',100,20,'是',100),
+		 ('C-JD-PROMO','2026-06','contract_revenue_cost','成本-月度结算',200,50,'是',200),
+		 ('C-JD-OTHER','2026-06','contract_revenue_cost','成本-月度结算',5000,1000,'是',5000)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec stmt failed: %v\n%s", err, stmt)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	question := "从项目成本口径看，推广数据合同-京东，从2025年10月到上一个完整自然月月底，还有多少没付？"
+	route := engine.resolveQueryRouting(question)
+	if route.spec.QueryFamily != QueryFamilyContractDimension || !route.spec.NeedsContractDimension {
+		t.Fatalf("route family=%s needs_dimension=%t, want named project contract dimension; spec=%+v", route.spec.QueryFamily, route.spec.NeedsContractDimension, route.spec)
+	}
+
+	res := engine.Query(question)
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["entity"]; got != "推广数据合同-京东" {
+		t.Fatalf("entity = %v, want exact project contract content; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := anyToFloat64(res.Data["total"]); got != 230 {
+		t.Fatalf("total = %v, want single project payable 230 not company aggregate; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if strings.Contains(res.Message, "如果你问的是其中这条") {
+		t.Fatalf("single project should be primary answer, not a secondary aside: %q", res.Message)
+	}
+}
+
 func TestCodeNamedContractReceivableUsesContractDimension(t *testing.T) {
 	dbPath := buildContractARAPPriorityDB(t)
 	db, err := sql.Open("sqlite", dbPath)
@@ -1105,6 +1209,54 @@ func TestCodeNamedContractReceivableUsesContractDimension(t *testing.T) {
 	}
 	if strings.Contains(res.Message, "云南泽塔") || strings.Contains(res.Message, "供应商") {
 		t.Fatalf("contract receivable question should not route to supplier/cash evidence, got %q", res.Message)
+	}
+}
+
+func TestNamedProtocolReceivableRangeKeepsRequestedWindow(t *testing.T) {
+	dbPath := buildContractARAPPriorityDB(t)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	stmts := []string{
+		`INSERT INTO fin_contracts(contract_id, customer_name, contract_content) VALUES ('C-EDGE-001','百度在线网络技术(北京)有限公司','边缘计算资源服务协议')`,
+		`INSERT INTO fin_fund_income(contract_id, year_month, source_report_type, source_sheet_name, settlement_amount, received_amount, is_invoiced, invoice_amount) VALUES
+		 ('C-EDGE-001','2025-10','contract_fund_income','25年Q4收入明细',100,50,'是',100),
+		 ('C-EDGE-001','2026-06','contract_fund_income','26年Q2收入明细',200,0,'是',200)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec stmt failed: %v\n%s", err, stmt)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+
+	engine, err := NewEngine(dbPath, "测试公司", WithAsOfAnchor(time.Date(2026, time.July, 2, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	defer engine.Close()
+
+	question := "边缘计算资源服务协议这个合同，从2025年10月到上个完整自然月月底，还有多少没收回来？"
+	route := engine.resolveQueryRouting(question)
+	if route.spec.QueryFamily != QueryFamilyContractDimension || !route.spec.NeedsContractDimension {
+		t.Fatalf("route family=%s needs_dimension=%t, want contract dimension; spec=%+v", route.spec.QueryFamily, route.spec.NeedsContractDimension, route.spec)
+	}
+
+	res := engine.Query(question)
+	if !res.Success {
+		t.Fatalf("query failed: %s data=%+v", res.Message, res.Data)
+	}
+	if got := res.Data["entity"]; got != "边缘计算资源服务协议" {
+		t.Fatalf("entity = %v, want named protocol; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := res.Data["period"]; got != "2025-10~2026-06" {
+		t.Fatalf("period = %v, want full requested range; message=%s data=%+v", got, res.Message, res.Data)
+	}
+	if got := anyToFloat64(res.Data["total"]); got != 250 {
+		t.Fatalf("total = %v, want receivable across requested range 250; message=%s data=%+v", got, res.Message, res.Data)
 	}
 }
 

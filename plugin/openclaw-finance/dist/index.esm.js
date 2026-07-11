@@ -529,6 +529,15 @@ function sameFinanceQuestionText(a, b) {
   return !!left && !!right && left === right;
 }
 
+function capturedFinanceQuestionContainsModelRaw(capturedQuestion, modelRawQuestion) {
+  const captured = comparableFinanceQuestionText(capturedQuestion);
+  const modelRaw = comparableFinanceQuestionText(modelRawQuestion);
+  if (!captured || !modelRaw) return false;
+  if (captured === modelRaw) return true;
+  if ([...modelRaw].length < 8) return false;
+  return captured.includes(modelRaw);
+}
+
 function modelRawQuestionPreservesModelQuery(rawQuestion, modelQuery) {
   const raw = comparableFinanceQuestionText(rawQuestion);
   const query = comparableFinanceQuestionText(modelQuery);
@@ -1054,6 +1063,12 @@ function takeLatestFinanceQuestionForTool(ctx, modelRawQuestion = "") {
     const matches = pending.filter(([, question]) => sameFinanceQuestionText(question, modelRaw));
     if (matches.length === 1) {
       const [key, question] = matches[0];
+      latestFinanceQuestionBySession.delete(key);
+      return question || "";
+    }
+    const containingMatches = pending.filter(([, question]) => capturedFinanceQuestionContainsModelRaw(question, modelRaw));
+    if (containingMatches.length === 1) {
+      const [key, question] = containingMatches[0];
       latestFinanceQuestionBySession.delete(key);
       return question || "";
     }

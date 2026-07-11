@@ -644,6 +644,72 @@ test("finance-query can recover the captured patrol raw question when execute la
   });
 });
 
+test("finance-query recovers uniquely matching captured raw question when model raw dropped source words", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const staleRevenueQuestion = "收入表中最新月份项目结算营收是多少？";
+    const staleBankQuestion = "银行卡上，上个完整自然月净现金流是多少？";
+    const currentQuestion = "从序时账看，上个完整自然月的账上收入、成本费用和净利润是多少？";
+    const modelRawQuestion = "上个完整自然月的账上收入、成本费用和净利润是多少？";
+    const patrolPrompt = [
+      "[巡检要求]",
+      "这是一条只读巡检请求。回答前必须先调用 `finance-query` 获取最新事实。",
+      "",
+      "[用户原问题]",
+      currentQuestion
+    ].join("\n");
+
+    await hooks.get("before_prompt_build")({
+      prompt: staleRevenueQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: staleRevenueQuestion }] }]
+    }, { sessionKey: "stale-revenue-for-source-words" });
+    await hooks.get("before_prompt_build")({
+      prompt: staleBankQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: staleBankQuestion }] }]
+    }, { sessionKey: "stale-bank-for-source-words" });
+    await hooks.get("before_prompt_build")({
+      prompt: patrolPrompt,
+      messages: [{ role: "user", content: [{ type: "text", text: patrolPrompt }] }]
+    }, { sessionKey: "current-source-words-patrol" });
+
+    await tools.get("finance-query").execute("call-source-words-patrol-query", {
+      query: "2026年6月的收入、成本费用和净利润",
+      raw_user_query: modelRawQuestion
+    });
+
+    const args = toolCalls.at(-1).arguments;
+    assert.equal(args.query, "2026年6月的收入、成本费用和净利润");
+    assert.equal(args.raw_user_query, currentQuestion);
+  });
+});
+
+test("finance-query does not recover subset model raw when multiple captured questions match", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const firstQuestion = "从序时账看，上个完整自然月的账上收入、成本费用和净利润是多少？";
+    const secondQuestion = "从利润表看，上个完整自然月的账上收入、成本费用和净利润是多少？";
+    const modelRawQuestion = "上个完整自然月的账上收入、成本费用和净利润是多少？";
+
+    await hooks.get("before_prompt_build")({
+      prompt: firstQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: firstQuestion }] }]
+    }, { sessionKey: "ambiguous-source-words-a" });
+    await hooks.get("before_prompt_build")({
+      prompt: secondQuestion,
+      messages: [{ role: "user", content: [{ type: "text", text: secondQuestion }] }]
+    }, { sessionKey: "ambiguous-source-words-b" });
+
+    await tools.get("finance-query").execute("call-ambiguous-source-words", {
+      query: "2026年6月的收入、成本费用和净利润",
+      raw_user_query: modelRawQuestion
+    });
+
+    const args = toolCalls.at(-1).arguments;
+    assert.equal(args.query, "2026年6月的收入、成本费用和净利润");
+    assert.equal(Object.hasOwn(args, "raw_user_query"), false);
+  });
+});
+
 test("finance prompt hook prefers current prompt over stale session history", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {

@@ -2,6 +2,7 @@ package query
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -82,6 +83,14 @@ func shouldKeepEntityForQuestionScopeWithUserQuestion(question, userQuestion, en
 
 func (e *Engine) applyQueryPriorityAdjustments(q, userQuestion string, intent Intent, spec QuerySpec, entity string, hasRealEntity bool, anchor time.Time) (QuerySpec, string, bool, time.Time) {
 	cfg := e.currentRuleConfig()
+	if strings.TrimSpace(entity) == "" {
+		if matched := e.resolveContractSubject(q, ""); shouldUseGroundedContractSubjectForDimension(q, matched) {
+			entity = matched
+			spec.Entity = matched
+			spec.BossRewrite.Entity = matched
+			hasRealEntity = true
+		}
+	}
 	if !shouldKeepEntityForQuestionScopeWithUserQuestion(q, userQuestion, entity, cfg) {
 		entity = ""
 		spec.Entity = ""
