@@ -683,6 +683,30 @@ test("finance-query recovers uniquely matching captured raw question when model 
   });
 });
 
+test("finance-query recovers captured relative-period question when model injects fixed month without raw_user_query", async () => {
+  const toolCalls = [];
+  await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {
+    const currentQuestion = "按序时账口径，上个完整月份账上净利润怎么样？";
+    await hooks.get("before_prompt_build")({
+      prompt: [
+        "[巡检要求]",
+        "这是一条只读巡检请求。回答前必须先调用 `finance-query` 获取最新事实。",
+        "",
+        "[用户原问题]",
+        currentQuestion
+      ].join("\n")
+    }, { runId: "current-relative-period-run", sessionKey: "current-relative-period-session" });
+
+    await tools.get("finance-query").execute("call-relative-period-rewritten-query", {
+      query: "按序时账口径，2026年6月账上净利润"
+    });
+
+    const args = toolCalls.at(-1).arguments;
+    assert.equal(args.query, "按序时账口径，2026年6月账上净利润");
+    assert.equal(args.raw_user_query, currentQuestion);
+  });
+});
+
 test("finance-query does not recover subset model raw when multiple captured questions match", async () => {
   const toolCalls = [];
   await withFinancePluginHarness(toolCalls, async ({ hooks, tools }) => {

@@ -180,6 +180,49 @@ const FINANCE_KEYWORDS = [
   "货币资金"
 ];
 
+const RELATIVE_FINANCE_PERIOD_TERMS = [
+  "上一个完整自然月",
+  "上个完整自然月",
+  "上一个完整月份",
+  "上个完整月份",
+  "上一个完整月",
+  "上个完整月",
+  "最近完整月份",
+  "最新完整月份",
+  "最近月份",
+  "最新月份",
+  "上个月",
+  "上月"
+];
+
+const REWRITE_MATCH_FINANCE_TERMS = [
+  "序时账",
+  "账上",
+  "利润表",
+  "收入表",
+  "余额表",
+  "官方余额表",
+  "银行",
+  "银行卡",
+  "银行流水",
+  "项目口径",
+  "合同口径",
+  "项目成本口径",
+  "净利润",
+  "净现金流",
+  "净流入",
+  "应收",
+  "应付",
+  "营收",
+  "收入",
+  "成本",
+  "费用",
+  "回款",
+  "付款"
+];
+
+const ABSOLUTE_FINANCE_MONTH_RE = /(?:20\d{2}\s*年\s*(?:0?[1-9]|1[0-2])\s*月|20\d{2}\s*[-/.]\s*(?:0?[1-9]|1[0-2]))/;
+
 // MCP Client for communicating with financeqa serve
 class MCPClient {
   constructor(binaryPath) {
@@ -536,6 +579,25 @@ function capturedFinanceQuestionContainsModelRaw(capturedQuestion, modelRawQuest
   if (captured === modelRaw) return true;
   if ([...modelRaw].length < 8) return false;
   return captured.includes(modelRaw);
+}
+
+function containsAnyFinanceTerm(text, terms) {
+  return terms.some((term) => text.includes(term));
+}
+
+function financeTermOverlapCount(leftText, rightText, terms) {
+  return terms.filter((term) => leftText.includes(term) && rightText.includes(term)).length;
+}
+
+function capturedFinanceQuestionMatchesModelQueryRewrite(capturedQuestion, modelQuery) {
+  const captured = financeQuestionText(capturedQuestion);
+  const query = financeQuestionText(modelQuery);
+  if (!captured || !query || !isFinanceQuestion(captured) || !isFinanceQuestion(query)) return false;
+  const capturedHasRelativePeriod = containsAnyFinanceTerm(captured, RELATIVE_FINANCE_PERIOD_TERMS);
+  const queryHasInjectedAbsoluteMonth = ABSOLUTE_FINANCE_MONTH_RE.test(query)
+    && !containsAnyFinanceTerm(query, RELATIVE_FINANCE_PERIOD_TERMS);
+  if (!capturedHasRelativePeriod || !queryHasInjectedAbsoluteMonth) return false;
+  return financeTermOverlapCount(captured, query, REWRITE_MATCH_FINANCE_TERMS) >= 2;
 }
 
 function modelRawQuestionPreservesModelQuery(rawQuestion, modelQuery) {
@@ -1033,7 +1095,7 @@ function setLatestFinanceQuestionForToolScope(event, ctx, latestQuestion) {
   }
 }
 
-function takeLatestFinanceQuestionForTool(ctx, modelRawQuestion = "") {
+function takeLatestFinanceQuestionForTool(ctx, modelRawQuestion = "", modelQuery = "") {
   const scope = financeScope(undefined, ctx);
   if (scope.runKey) {
     if (!latestFinanceQuestionBySession.has(scope.runKey)) return "";
@@ -1069,6 +1131,15 @@ function takeLatestFinanceQuestionForTool(ctx, modelRawQuestion = "") {
     const containingMatches = pending.filter(([, question]) => capturedFinanceQuestionContainsModelRaw(question, modelRaw));
     if (containingMatches.length === 1) {
       const [key, question] = containingMatches[0];
+      latestFinanceQuestionBySession.delete(key);
+      return question || "";
+    }
+  }
+  const query = financeQuestionText(modelQuery);
+  if (query) {
+    const rewrittenMatches = pending.filter(([, question]) => capturedFinanceQuestionMatchesModelQueryRewrite(question, query));
+    if (rewrittenMatches.length === 1) {
+      const [key, question] = rewrittenMatches[0];
       latestFinanceQuestionBySession.delete(key);
       return question || "";
     }
@@ -1810,7 +1881,7 @@ function createFinanceTool(name, description, parameters, toolCtx) {
       const { raw_user_query: _discardModelRawQuery, ...forwardedParams } = rawParamsObject;
       const modelQuery = name === "finance-query" ? financeQuestionText(rawParamsObject.query || "") : "";
       const modelRawQuestion = name === "finance-query" ? financeQuestionText(rawParamsObject.raw_user_query || "") : "";
-      const protectedQuestion = name === "finance-query" ? takeLatestFinanceQuestionForTool(executionCtx, modelRawQuestion) : "";
+      const protectedQuestion = name === "finance-query" ? takeLatestFinanceQuestionForTool(executionCtx, modelRawQuestion, modelQuery) : "";
       const rawUserQuestion = protectedQuestion || (modelRawQuestionPreservesModelQuery(modelRawQuestion, modelQuery) ? modelRawQuestion : "");
       const params = name === "finance-query"
         ? (modelQuery
