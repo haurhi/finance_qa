@@ -10,6 +10,25 @@
 
 ---
 
+## Execution status as of 2026-07-15
+
+This plan has been implemented and deployed as FinanceQA / OpenClaw plugin
+`2.2.64` on `lzh`.
+
+| Check | Result |
+| --- | --- |
+| Current branch | `fix/financeqa-patrol-20260629` |
+| Verified commit | `265e8bf` |
+| Production runtime | `lzh:/root/finance_qa @ 265e8bf` |
+| Production version | Go binary `2.2.64`; OpenClaw plugin `2.2.64` |
+| Latest production patrol | `/var/log/agent-patrol/financeqa/20260715T171110`, `14/14`, invalid `0` |
+| Last 48h production patrol | `666/672 = 99.11%`; valid accuracy `666/671 = 99.25%` |
+| Local pre-merge verification | `git diff --check`; version preflight; OpenClaw plugin tests `39/39`; `make test-full`; `make test-business` |
+
+Remaining release action: fast-forward merge this branch into `main`, push
+`main`, and switch production checkout to `main@265e8bf` without changing the
+already validated runtime logic.
+
 ## File map
 
 - `plugin/openclaw-finance/dist/index.esm.js`: merge tool-factory/runtime scope, forward model `query` unchanged, and attach the run-scoped original question as `raw_user_query`.

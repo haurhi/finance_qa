@@ -1,4 +1,19 @@
-# FinanceQA 2.2.57 巡检稳定性修复设计
+# FinanceQA 2.2.57 -> 2.2.64 巡检稳定性修复设计
+
+## 完成状态（2026-07-15）
+
+本设计已按 KISS、不硬编码、不复制业务逻辑到 OpenClaw bridge 的原则落地到 `fix/financeqa-patrol-20260629`。
+
+| 项目 | 状态 |
+| --- | --- |
+| 已验证提交 | `265e8bf` |
+| 已落地版本 | FinanceQA / OpenClaw plugin `2.2.64` |
+| 生产环境 | `lzh:/root/finance_qa`，当前运行 `265e8bf` |
+| 最新生产巡检 | `/var/log/agent-patrol/financeqa/20260715T171110`，`14/14`，invalid `0` |
+| 最近 48 小时生产巡检 | `666/672 = 99.11%`，有效口径 `666/671 = 99.25%` |
+| 合并状态 | 当前生产已运行 feature branch；`main` 尚未包含该提交，下一步应 fast-forward 合并并让生产 checkout 对齐到 `main@265e8bf` |
+
+验收口径以生产 `summary.json` / `scores.json` 为准。历史背景中的 `2.2.57` 与 `220/238` 是本轮修复启动时的基线，不应再作为当前生产准确率口径。
 
 ## 背景与目标
 
